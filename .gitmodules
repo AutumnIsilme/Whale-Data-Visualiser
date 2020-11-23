@@ -1,11 +1,3 @@
-[submodule "Supernova/vendor/spdlog"]
-	path = Supernova/vendor/spdlog
-	url = https://github.com/gabime/spdlog
-	branch = v1.x
-[submodule "Supernova/vendor/imgui"]
-	path = Supernova/vendor/imgui
-	url = https://github.com/Doctor5555/imgui
-	branch = master
 [submodule "Supernova/vendor/glm"]
 	path = Supernova/vendor/glm
 	url = https://github.com/g-truc/glm
