@@ -1,8 +1,4 @@
-[submodule "Supernova/vendor/glm"]
-	path = Supernova/vendor/glm
+[submodule "Visualiser/vendor/GLFW"]
+	url = https://github.com/Doctor5555/glfw
+[submodule "Visualiser/vendor/glm"]
 	url = https://github.com/g-truc/glm
-	branch = docking
-[submodule "Supernova/vendor/GLFW"]
-	path = Supernova/vendor/GLFW
-	url = https://github.com/doctor5555/glfw
-	branch = master
