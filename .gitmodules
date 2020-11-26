@@ -1,4 +1,4 @@
 [submodule "Visualiser/vendor/GLFW"]
-	url = https://github.com/Doctor5555/glfw
+	url = https://github.com/doctor5555/glfw
 [submodule "Visualiser/vendor/glm"]
 	url = https://github.com/g-truc/glm

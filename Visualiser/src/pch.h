@@ -17,4 +17,5 @@
 
 #ifdef _PLATFORM_WINDOWS
 	#include <Windows.h>
+	#include <assert.h>
 #endif
