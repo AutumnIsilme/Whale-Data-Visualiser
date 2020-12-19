@@ -5,9 +5,10 @@
 class Window
 {
 public:
-	int Init(uint32_t width, uint32_t height);
-	uint32_t Update();
+	int Init(u32 width, u32 height);
+	u32 Update();
 	void SwapBuffers();
+	void* GetPlatformWindow();
 
 	Window(); // Constructor must do nothing.
 	~Window();

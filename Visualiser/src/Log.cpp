@@ -1,30 +1,19 @@
-#include "pch.h"
 #include "Log.h"
 
-void Log::Critical(const char* msg)
-{
-	std::cout << "\033[0;31m[CRITICAL] " << msg << "\033[0m\n";
-}
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
-void Log::Error(const char* msg)
-{
-	std::cout << "\033[1;31m[ERROR]    " << msg << "\033[0m\n";
-}
+std::shared_ptr<spdlog::logger> Log::s_Logger;
 
-void Log::Warn(const char* msg)
+void Log::Init()
 {
-	std::cout << "\033[0;33m[WARN]     " << msg << "\033[0m\n";
-}
+	std::vector<spdlog::sink_ptr> logSinks;
+	logSinks.emplace_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+	logSinks.emplace_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>("Visualiser.log", true));
+	logSinks[0]->set_pattern("%^[%T] %n: %v%$");
+	logSinks[1]->set_pattern("[%T] [%l] %n: %v");
 
-void Log::Info(const char* msg)
-{
-	std::cout << "\033[0;36m[INFO]     " << msg << "\033[0m\n";
+	s_Logger = std::make_shared<spdlog::logger>("Visualiser", begin(logSinks), end(logSinks));
+	s_Logger->set_level(spdlog::level::trace);
+	s_Logger->flush_on(spdlog::level::trace);
 }
-
-void Log::Debug(const char* msg)
-{
-	std::cout << "\033[0;37m[DEBUG]    " << msg << "\033[0m\n";
-}
-
-Log::~Log()
-{}

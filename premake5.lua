@@ -18,13 +18,13 @@ outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
 IncludeDir = {}
 IncludeDir["GLFW"] = "Visualiser/vendor/GLFW/include"
-IncludeDir["GLAD"] = "Visualiser/vendor/GLAD/include"
 IncludeDir["glm"] = "Visualiser/vendor/glm"
-IncludeDir["stb_image"] = "Visualiser/vendor/stb_image"
-
-group "Dependencies"
-	include "Visualiser/vendor/GLFW"
-	include "Visualiser/vendor/Glad"
+IncludeDir["stb_image"] = "Visualiser/vendor/stb_image/include"
+IncludeDir["spdlog"] = "Visualiser/vendor/spdlog/include"
+--IncludeDir["imgui"] = "Visualiser/vendor/imgui"
+IncludeDir["bgfx"] = "Visualiser/vendor/bgfx/include"
+IncludeDir["bimg"] = "Visualiser/vendor/bimg/include"
+IncludeDir["bx"] = "Visualiser/vendor/bx/include"
 
 group ""
 
@@ -33,13 +33,11 @@ project "Visualiser"
 	kind "ConsoleApp"
 	language "C++"
 	cppdialect "C++17"
-	staticruntime "on"
+    staticruntime "on"
+    systemversion "latest"
 	
 	targetdir ("bin/" .. outputdir .. "/%{prj.name}")
 	objdir ("bin-int/" .. outputdir .. "/%{prj.name}")
-	
-	pchheader "pch.h"
-	pchsource "Visualiser/src/pch.cpp"
 	
 	files
 	{
@@ -60,16 +58,22 @@ project "Visualiser"
 	{
 		"%{prj.name}/src",
 		"%{IncludeDir.GLFW}",
-		"%{IncludeDir.GLAD}",
 		"%{IncludeDir.glm}",
-		"%{IncludeDir.stb_image}"
+        "%{IncludeDir.stb_image}",
+        "%{IncludeDir.spdlog}",
+        --"%{IncludeDir.imgui}",
+        "%{IncludeDir.bgfx}",
+        "%{IncludeDir.bimg}",
+        "%{IncludeDir.bx}"
 	}
 	
 	links
 	{
 		"GLFW",
-		"GLAD",
-		"opengl32.lib"
+        --"imgui",
+        "bgfx",
+        "bimg",
+        "bx"
 	}
 	
 	filter "system:windows"
@@ -87,7 +91,7 @@ project "Visualiser"
 		}
 		
 	filter "configurations:Debug"
-		defines "DEBUG"
+		defines "_DEBUG"
 		runtime "Debug"
 		symbols "on"
 		
@@ -104,49 +108,161 @@ project "Visualiser"
 		runtime "Release"
 		optimize "on"
 
-        --[[
-project "Sandbox"
-	location "Sandbox"
-	kind "ConsoleApp"
+
+group "Dependencies"
+	include "Visualiser/vendor/GLFW"
+    include "Visualiser/vendor/Glad"
+    --include "Visualiser/vendor/imgui"
+
+--[[
+
+    Below is borrowed from https://github.com/jpcy/bgfx-minimal-example under the BSD 2-clause license:
+
+Copyright 2010-2019 Branimir Karadzic
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, this
+      list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+OF THE POSSIBILITY OF SUCH DAMAGE.
+
+]]
+
+local BGFX_DIR = "Visualiser/vendor/bgfx"
+local BIMG_DIR = "Visualiser/vendor/bimg"
+local BX_DIR = "Visualiser/vendor/bx"
+
+function setBxCompat()
+	filter "action:vs*"
+		includedirs { path.join(BX_DIR, "include/compat/msvc") }
+	filter { "system:windows", "action:gmake" }
+		includedirs { path.join(BX_DIR, "include/compat/mingw") }
+	filter { "system:macosx" }
+		includedirs { path.join(BX_DIR, "include/compat/osx") }
+		buildoptions { "-x objective-c++" }
+end
+        
+project "bgfx"
+	kind "StaticLib"
 	language "C++"
 	cppdialect "C++17"
-	staticruntime "on"
-	
-	targetdir ("bin/" .. outputdir .. "/%{prj.name}")
-	objdir ("bin-int/" .. outputdir .. "/%{prj.name}")
-	
+	exceptionhandling "Off"
+    rtti "Off"
+    systemversion "latest"
+    staticruntime "on"
+	defines "__STDC_FORMAT_MACROS"
 	files
 	{
-		"%{prj.name}/src/**.h",
-		"%{prj.name}/src/**.cpp"
+		path.join(BGFX_DIR, "include/bgfx/**.h"),
+		path.join(BGFX_DIR, "src/*.cpp"),
+		path.join(BGFX_DIR, "src/*.h"),
 	}
-	
+	excludes
+	{
+		path.join(BGFX_DIR, "src/amalgamated.cpp"),
+	}
 	includedirs
 	{
-		"Supernova/src",
-		"%{IncludeDir.spdlog}",
-		"%{IncludeDir.glm}",
-		"Supernova/vendor"
+		path.join(BX_DIR, "include"),
+		path.join(BIMG_DIR, "include"),
+		path.join(BGFX_DIR, "include"),
+		path.join(BGFX_DIR, "3rdparty"),
+		path.join(BGFX_DIR, "3rdparty/dxsdk/include"),
+		path.join(BGFX_DIR, "3rdparty/khronos")
 	}
-	
-	links
-	{
-		"Supernova"
-	}
-	
-	filter "system:windows"
-		cppdialect "C++17"
-		systemversion "latest"
-		
 	filter "configurations:Debug"
-		defines "SN_DEBUG"
+        defines "BGFX_CONFIG_DEBUG=1"
+        runtime "Debug"
 		symbols "on"
-		
-	filter "configurations:Release"
-		defines "SN_RELEASE"
-		optimize "on"
-	
-	filter "configurations:Dist"
-		defines "SN_DIST"
-        optimize "on"
-        ]]
+	filter "action:vs*"
+		defines "_CRT_SECURE_NO_WARNINGS"
+		excludes
+		{
+			path.join(BGFX_DIR, "src/glcontext_glx.cpp"),
+			path.join(BGFX_DIR, "src/glcontext_egl.cpp")
+		}
+	filter "system:macosx"
+		files
+		{
+			path.join(BGFX_DIR, "src/*.mm"),
+		}
+	setBxCompat()
+
+project "bimg"
+	kind "StaticLib"
+	language "C++"
+	cppdialect "C++17"
+	exceptionhandling "Off"
+    rtti "Off"
+    systemversion "latest"
+    staticruntime "on"
+	files
+	{
+		path.join(BIMG_DIR, "include/bimg/*.h"),
+		path.join(BIMG_DIR, "src/image.cpp"),
+		path.join(BIMG_DIR, "src/image_gnf.cpp"),
+		path.join(BIMG_DIR, "src/*.h"),
+		path.join(BIMG_DIR, "3rdparty/astc-codec/src/decoder/*.cc")
+	}
+	includedirs
+	{
+		path.join(BX_DIR, "include"),
+		path.join(BIMG_DIR, "include"),
+		path.join(BIMG_DIR, "3rdparty/astc-codec"),
+		path.join(BIMG_DIR, "3rdparty/astc-codec/include"),
+	}
+    setBxCompat()
+    filter "Configurations:Debug"
+        runtime "Debug"
+        symbols "on"
+
+project "bx"
+	kind "StaticLib"
+	language "C++"
+	cppdialect "C++17"
+	exceptionhandling "Off"
+    rtti "Off"
+    systemversion "latest"
+    staticruntime "on"
+	defines "__STDC_FORMAT_MACROS"
+	files
+	{
+		path.join(BX_DIR, "include/bx/*.h"),
+		path.join(BX_DIR, "include/bx/inline/*.inl"),
+		path.join(BX_DIR, "src/*.cpp")
+	}
+	excludes
+	{
+		path.join(BX_DIR, "src/amalgamated.cpp"),
+		path.join(BX_DIR, "src/crtnone.cpp")
+	}
+	includedirs
+	{
+		path.join(BX_DIR, "3rdparty"),
+		path.join(BX_DIR, "include")
+	}
+	filter "action:vs*"
+		defines "_CRT_SECURE_NO_WARNINGS"
+    setBxCompat()
+    filter "Configurations:Debug"
+        runtime "Debug"
+        symbols "on"
+    filter "system:windows"
+        includedirs {
+            path.join(BX_DIR, "include/compat/msvc")
+        }

@@ -1,35 +1,37 @@
-#include "pch.h"
-#include "Window.h"
+#include "Graphics/Window.h"
+
 #include "Common.h"
 #include "Log.h"
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
+#define NULL 0
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
-	glViewport(0, 0, width, height);
+	//glViewport(0, 0, width, height);
 }
 
-int Window::Init(uint32_t width, uint32_t height)
+int Window::Init(u32 width, u32 height)
 {
 	int init_result = glfwInit();
 	if (init_result != GLFW_TRUE)
 	{
-		Log::Critical("Failed to initialise GLFW!");
+		LOG_CRITICAL("Failed to initialise GLFW!");
 		return -1;
 	}
 
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
 	glfw_window = glfwCreateWindow(width, height, "Window", NULL, NULL);
 
 	if (glfw_window == NULL)
 	{
-		Log::Critical("Failed to create GLFW window!");
+		LOG_CRITICAL("Failed to create GLFW window!");
 		glfwTerminate();
 		return -1;
 	}
@@ -53,6 +55,11 @@ uint32_t Window::Update()
 void Window::SwapBuffers()
 {
 	glfwSwapBuffers(glfw_window);
+}
+
+void* Window::GetPlatformWindow()
+{
+	return glfwGetWin32Window(glfw_window);
 }
 
 Window::Window()

@@ -2,3 +2,15 @@
 	url = https://github.com/doctor5555/glfw
 [submodule "Visualiser/vendor/glm"]
 	url = https://github.com/g-truc/glm
+[submodule "Visualiser/vendor/spdlog"]
+	path = Visualiser/vendor/spdlog
+	url = https://github.com/Doctor5555/spdlog
+[submodule "Visualiser/vendor/bgfx"]
+	path = Visualiser/vendor/bgfx
+	url = https://github.com/bkaradzic/bgfx
+[submodule "Visualiser/vendor/bimg"]
+	path = Visualiser/vendor/bimg
+	url = https://github.com/bkaradzic/bimg
+[submodule "Visualiser/vendor/bx"]
+	path = Visualiser/vendor/bx
+	url = https://github.com/bkaradzic/bx
