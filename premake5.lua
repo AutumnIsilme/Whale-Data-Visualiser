@@ -21,7 +21,7 @@ IncludeDir["GLFW"] = "Visualiser/vendor/GLFW/include"
 IncludeDir["glm"] = "Visualiser/vendor/glm"
 IncludeDir["stb_image"] = "Visualiser/vendor/stb_image/include"
 IncludeDir["spdlog"] = "Visualiser/vendor/spdlog/include"
---IncludeDir["imgui"] = "Visualiser/vendor/imgui"
+IncludeDir["imgui"] = "Visualiser/vendor/imgui"
 IncludeDir["bgfx"] = "Visualiser/vendor/bgfx/include"
 IncludeDir["bimg"] = "Visualiser/vendor/bimg/include"
 IncludeDir["bx"] = "Visualiser/vendor/bx/include"
@@ -61,16 +61,17 @@ project "Visualiser"
 		"%{IncludeDir.glm}",
         "%{IncludeDir.stb_image}",
         "%{IncludeDir.spdlog}",
-        --"%{IncludeDir.imgui}",
+        "%{IncludeDir.imgui}",
         "%{IncludeDir.bgfx}",
         "%{IncludeDir.bimg}",
-        "%{IncludeDir.bx}"
+        "%{IncludeDir.bx}",
+        "Visualiser/vendor/bx/include/compat/msvc"
 	}
 	
 	links
 	{
 		"GLFW",
-        --"imgui",
+        "imgui",
         "bgfx",
         "bimg",
         "bx"
@@ -112,7 +113,35 @@ project "Visualiser"
 group "Dependencies"
 	include "Visualiser/vendor/GLFW"
     include "Visualiser/vendor/Glad"
-    --include "Visualiser/vendor/imgui"
+
+local IMGUI_DIR = "Visualiser/vendor/imgui"
+
+project "ImGui"
+    kind "StaticLib"
+    language "C++"
+    
+	targetdir ("../../../bin/" .. outputdir .. "/%{prj.name}")
+    objdir ("../../../bin-int/" .. outputdir .. "/%{prj.name}")
+
+	files
+	{
+        path.join(IMGUI_DIR, "imconfig.h"),
+        path.join(IMGUI_DIR, "imgui.h"),
+        path.join(IMGUI_DIR, "imgui.cpp"),
+        path.join(IMGUI_DIR, "imgui_draw.cpp"),
+        path.join(IMGUI_DIR, "imgui_internal.h"),
+        path.join(IMGUI_DIR, "imgui_tables.cpp"),
+        path.join(IMGUI_DIR, "imgui_widgets.cpp"),
+        path.join(IMGUI_DIR, "imstb_rectpack.h"),
+        path.join(IMGUI_DIR, "imstb_textedit.h"),
+        path.join(IMGUI_DIR, "imstb_truetype.h"),
+        path.join(IMGUI_DIR, "imgui_demo.cpp")
+    }
+    
+	filter "system:windows"
+        systemversion "latest"
+        cppdialect "C++17"
+        staticruntime "On"
 
 --[[
 

@@ -1,5 +1,6 @@
 #include "Log.h"
-#include "Graphics/Window.h"
+#include "Window.h"
+#include "Application.h"
 
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
@@ -8,10 +9,17 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
 
+#include <GLFW/glfw3.h>
+
+#include <imgui.h>
+#include "ImGuiImpl.h"
+
 Window mainWindow;
 
-#define WIDTH 1280
-#define HEIGHT 720
+u32 WIDTH = 1280;
+u32 HEIGHT = 720;
+
+bgfx::FrameBufferHandle mainFrameBuffer;
 
 /*
 What do I want to be able to do?
@@ -44,19 +52,37 @@ static PosColorVertex cubeVertices[] =
 
 static const uint16_t cubeTriList[] =
 {
-	0, 1, 2,
-	1, 3, 2,
-	4, 6, 5,
-	5, 6, 7,
-	0, 2, 4,
-	4, 2, 6,
-	1, 5, 3,
-	5, 7, 3,
-	0, 4, 1,
-	4, 5, 1,
-	2, 3, 6,
 	6, 3, 7,
+	2, 3, 6,
+	4, 5, 1,
+	0, 4, 1,
+	5, 7, 3,
+	1, 5, 3,
+	4, 2, 6,
+	0, 2, 4,
+	5, 6, 7,
+	4, 6, 5,
+	1, 3, 2,
+	0, 1, 2,
 };
+
+static bgfx::FrameBufferHandle window2fbh;
+
+void reset(s32 width, s32 height)
+{
+	WIDTH = width;
+	HEIGHT = height;
+
+	bgfx::reset(width, height, BGFX_RESET_VSYNC);
+	imguiReset(width, height);
+
+	bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
+	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x00FF00FF, 1.0f, 0);
+	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
+	bgfx::setViewFrameBuffer(1, window2fbh);
+	bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF, 1.0f, 0);
+	bgfx::setViewRect(1, 0, 0, 480, 360);
+}
 
 bgfx::ShaderHandle loadDefaultShader(const char* filename)
 {
@@ -96,7 +122,7 @@ int main(int argc, char** argv)
 	Log::Init();
 
 	// @TODO: get monitor size or something to set resolution
-	if (mainWindow.Init(WIDTH, HEIGHT) == -1)
+	if (mainWindow.Init(WIDTH, HEIGHT, true) == -1)
 	{
 		LOG_CRITICAL("Window init failed, terminating.");
 		return -1;
@@ -114,8 +140,7 @@ int main(int argc, char** argv)
 	init_params.resolution.reset = BGFX_RESET_VSYNC;
 	bgfx::init(init_params);
 
-	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x326fa8ff, 1.0f, 0);
-	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
+	LOG_INFO("Renderer: {0} via bgfx", bgfx::getRendererName(bgfx::getRendererType()));
 
 	bgfx::VertexLayout layout;
 	layout.begin()
@@ -129,13 +154,51 @@ int main(int argc, char** argv)
 	bgfx::ShaderHandle fragment_shader = loadDefaultShader("fs_cubes.bin");
 	bgfx::ProgramHandle shader_program = bgfx::createProgram(vertex_shader, fragment_shader, true);
 
-	u32 counter = 0;													 
-	while (1)
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+
+	imguiInit(&mainWindow);
+	imguiReset(WIDTH, HEIGHT);
+
+	bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
+	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x00FF00FF, 1.0f, 0);
+	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
+
+	imguiInstallCallbacks();
+
+	Window window2;
+	window2.Init(480, 360, false);
+	window2fbh = bgfx::createFrameBuffer(window2.GetPlatformWindow(), 480, 360);
+	bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF, 1.0f, 0);
+	bgfx::setViewRect(1, 0, 0, 480, 360);
+
+	reset(WIDTH, HEIGHT);
+
+	u32 counter = 0;
+	float time, lastTime = 0;
+	float dt;
+	while (true)
 	{
+		bgfx::touch(0);
+		bgfx::touch(1);
+		time = (float)glfwGetTime();
+		dt = time - lastTime;
+		lastTime = time;
+		if (mainWindow.Update())
+		{
+			break;
+		}
+		imguiEvents(dt);
+		ImGui::NewFrame();
+
 		glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 1.0f, 0.0f });
 		glm::mat4 projection = glm::perspective(glm::radians(60.0f), float(WIDTH) / float(HEIGHT), 0.1f, 100.0f);
 		bgfx::setViewTransform(0, &view[0][0], &projection[0][0]);
-		glm::mat4 rotation = glm::identity<glm::mat4>();
+		glm::mat4 rotation = glm::mat4(1.0f);
+		rotation = glm::translate(rotation, { 1.0f, 0.0f, 0.0f });
 		rotation *= glm::yawPitchRoll(counter * 0.01f, counter * 0.01f, 0.0f);
 		bgfx::setTransform(&rotation[0][0]);
 
@@ -143,15 +206,25 @@ int main(int argc, char** argv)
 		bgfx::setIndexBuffer(index_buffer);
 		bgfx::submit(0, shader_program);
 
+		projection = glm::perspective(glm::radians(60.0f), float(480) / float(360), 0.1f, 100.0f);
+		bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
+
+		bgfx::setTransform(&rotation[0][0]);
+		bgfx::setVertexBuffer(0, vertex_buffer);
+		bgfx::setIndexBuffer(index_buffer);
+		bgfx::submit(1, shader_program);
+		ImGui::ShowDemoWindow();
+
+		ImGui::Render();
+		imguiRender(ImGui::GetDrawData(), 200);
+		ImGui::UpdatePlatformWindows();
+		ImGui::RenderPlatformWindowsDefault();
+
 		bgfx::frame();
 		counter++;
-
-		if (mainWindow.Update())
-		{
-			break;
-		}
 	}
 
+	imguiShutdown();
 	bgfx::destroy(vertex_buffer);
 	bgfx::destroy(index_buffer);
 	bgfx::shutdown();

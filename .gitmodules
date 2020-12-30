@@ -14,3 +14,6 @@
 [submodule "Visualiser/vendor/bx"]
 	path = Visualiser/vendor/bx
 	url = https://github.com/bkaradzic/bx
+[submodule "Visualiser/vendor/imgui"]
+	path = Visualiser/vendor/imgui
+	url = https://github.com/ocornut/imgui
