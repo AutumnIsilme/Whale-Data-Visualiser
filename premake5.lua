@@ -22,6 +22,7 @@ IncludeDir["glm"] = "Visualiser/vendor/glm"
 IncludeDir["stb_image"] = "Visualiser/vendor/stb_image/include"
 IncludeDir["spdlog"] = "Visualiser/vendor/spdlog/include"
 IncludeDir["imgui"] = "Visualiser/vendor/imgui"
+IncludeDir["implot"] = "Visualiser/vendor/implot"
 IncludeDir["bgfx"] = "Visualiser/vendor/bgfx/include"
 IncludeDir["bimg"] = "Visualiser/vendor/bimg/include"
 IncludeDir["bx"] = "Visualiser/vendor/bx/include"
@@ -63,6 +64,7 @@ project "Visualiser"
         "%{IncludeDir.stb_image}",
         "%{IncludeDir.spdlog}",
         "%{IncludeDir.imgui}",
+        "%{IncludeDir.implot}",
         "%{IncludeDir.bgfx}",
         "%{IncludeDir.bimg}",
         "%{IncludeDir.bx}",
@@ -74,6 +76,7 @@ project "Visualiser"
 	{
 		"GLFW",
         "imgui",
+        "implot",
         "bgfx",
         "bimg",
         "bx",
@@ -151,7 +154,34 @@ project "ImGui"
         cppdialect "C++17"
         staticruntime "On"
 
-local nfd_dir = "Visualiser/vendor/nativefiledialog/src"
+local IMPLOT_DIR = "Visualiser/vendor/implot"
+
+project "implot"
+    kind "StaticLib"
+    language "C++"
+
+    targetdir ("../../bin/" .. outputdir .. "/%{prj.name}")
+    objdir ("../../bin-int/" .. outputdir .. "/%{prj.name}")
+
+    files
+    {
+        path.join(IMPLOT_DIR, "implot.h"),
+        path.join(IMPLOT_DIR, "implot_internal.h"),
+        path.join(IMPLOT_DIR, "implot.cpp"),
+        path.join(IMPLOT_DIR, "implot_items.cpp")
+    }
+
+    includedirs
+    {
+        "%{IncludeDir.imgui}"
+    }
+
+    filter "system:windows"
+        systemversion "latest"
+        cppdialect "C++17"
+        staticruntime "On"
+
+local NFD_DIR = "Visualiser/vendor/nativefiledialog/src"
 
 project "nativefiledialog"
     kind "StaticLib"
@@ -162,11 +192,11 @@ project "nativefiledialog"
 
     files
     {
-        path.join(nfd_dir, "common.h"),
-        path.join(nfd_dir, "include/nfd.h"),
-        path.join(nfd_dir, "nfd_common.h"),
-        path.join(nfd_dir, "nfd_common.c"),
-        path.join(nfd_dir, "nfd_win.cpp")
+        path.join(NFD_DIR, "common.h"),
+        path.join(NFD_DIR, "include/nfd.h"),
+        path.join(NFD_DIR, "nfd_common.h"),
+        path.join(NFD_DIR, "nfd_common.c"),
+        path.join(NFD_DIR, "nfd_win.cpp")
     }
 
     includedirs
@@ -178,6 +208,7 @@ project "nativefiledialog"
         systemversion "latest"
         cppdialect "C++17"
         staticruntime "On"
+
 --[[
 
     Below is borrowed from https://github.com/jpcy/bgfx-minimal-example under the BSD 2-clause license:

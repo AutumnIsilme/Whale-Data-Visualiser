@@ -16,6 +16,8 @@
 #include <imgui.h>
 #include "ImGuiImpl.h"
 
+#include <implot.h>
+
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -35,6 +37,8 @@ What do I want to be able to do?
 */
 
 std::vector<float> depth_data;
+std::vector<float> depth_x_data;
+u8 just_loaded_depth = 0;
 
 struct PosColorVertex
 {
@@ -153,6 +157,7 @@ void LoadDepthData()
 
 	// @TODO: Maybe hold onto the old data to not replace it if the input is bad?
 	depth_data.clear();
+	depth_x_data.clear();
 
 	for (u32 index = 0; index < filesize; index++)
 	{
@@ -166,9 +171,11 @@ void LoadDepthData()
 			LOG_ERROR("Malformed depth data input: Expected number or newline, got {0} at {1}.", mem[index], index);
 			goto cleanup;
 		}
-		depth_data.push_back(std::stof(std::string(&mem[start], index - start)));
+		depth_data.push_back(-std::stof(std::string(&mem[start], index - start)));
+		depth_x_data.push_back(depth_x_data.size());
 	}
 	LOG_INFO("Loaded depth data from \"{0}\".", filepath);
+	just_loaded_depth = 3;
 cleanup:
 	free(mem);
 }
@@ -215,6 +222,8 @@ int main(int argc, char** argv)
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
 	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+
+	ImPlot::CreateContext();
 
 	imguiInit(&mainWindow);
 	imguiReset(WIDTH, HEIGHT);
@@ -354,11 +363,23 @@ int main(int argc, char** argv)
 		ImGui::End();
 
 		ImGui::Begin("Depth Graph");
-		ImGui::PlotHistogram("Depth", [](void* data, int idx)
+		ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+		if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
+		{
+			ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+			int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+			int start = (int)ImPlot::GetPlotLimits().X.Min;
+			start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
+			int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+			end = end < 0 ? 0 : end > depth_data.size() - 1 ? depth_data.size() - 1 : end;
+			int size = (end - start) / downsample;
+			while (size * downsample > depth_data.size())
 			{
-				std::vector<float>& f_data = *(std::vector<float>*)data;
-				return f_data.at(idx);
-			}, &depth_data, depth_data.size());
+				size--;
+			}
+			ImPlot::PlotLine("Data", &depth_x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
+			ImPlot::EndPlot();
+		}
 		ImGui::End();
 
 		ImGui::End();
@@ -376,12 +397,17 @@ int main(int argc, char** argv)
 			// We are not allowed to load these while a frame is in progress, so we wait until afer ImGui::Render
 			ImGui::LoadIniSettingsFromDisk(layout_path.c_str());
 		}
+
+		if (just_loaded_depth)
+			just_loaded_depth -= 1;
 	}
+	LOG_INFO("Shutting down.");
 
 	imguiShutdown();
 	/*bgfx::destroy(vertex_buffer);
 	bgfx::destroy(index_buffer);*/
 	bgfx::shutdown();
+
 
 	return 0;
 }
