@@ -25,6 +25,7 @@ IncludeDir["imgui"] = "Visualiser/vendor/imgui"
 IncludeDir["bgfx"] = "Visualiser/vendor/bgfx/include"
 IncludeDir["bimg"] = "Visualiser/vendor/bimg/include"
 IncludeDir["bx"] = "Visualiser/vendor/bx/include"
+IncludeDir["nfd"] = "Visualiser/vendor/nativefiledialog/src/include"
 
 group ""
 
@@ -65,6 +66,7 @@ project "Visualiser"
         "%{IncludeDir.bgfx}",
         "%{IncludeDir.bimg}",
         "%{IncludeDir.bx}",
+        "%{IncludeDir.nfd}",
         "Visualiser/vendor/bx/include/compat/msvc"
 	}
 	
@@ -74,7 +76,8 @@ project "Visualiser"
         "imgui",
         "bgfx",
         "bimg",
-        "bx"
+        "bx",
+        "nativefiledialog"
 	}
 	
 	filter "system:windows"
@@ -84,7 +87,12 @@ project "Visualiser"
 		{
             "GLFW_INCLUDE_NONE",
             "_PLATFORM_WINDOWS"
-		}
+        }
+        
+        links
+        {
+            "comctl32.lib"
+        }
 		
 		postbuildcommands
 		{
@@ -120,8 +128,8 @@ project "ImGui"
     kind "StaticLib"
     language "C++"
     
-	targetdir ("../../../bin/" .. outputdir .. "/%{prj.name}")
-    objdir ("../../../bin-int/" .. outputdir .. "/%{prj.name}")
+	targetdir ("../../bin/" .. outputdir .. "/%{prj.name}")
+    objdir ("../../bin-int/" .. outputdir .. "/%{prj.name}")
 
 	files
 	{
@@ -143,6 +151,33 @@ project "ImGui"
         cppdialect "C++17"
         staticruntime "On"
 
+local nfd_dir = "Visualiser/vendor/nativefiledialog/src"
+
+project "nativefiledialog"
+    kind "StaticLib"
+    language "C++"
+
+    targetdir ("../../bin/" .. outputdir .. "/%{prj.name}")
+    objdir ("../../bin-int/" .. outputdir .. "/%{prj.name}")
+
+    files
+    {
+        path.join(nfd_dir, "common.h"),
+        path.join(nfd_dir, "include/nfd.h"),
+        path.join(nfd_dir, "nfd_common.h"),
+        path.join(nfd_dir, "nfd_common.c"),
+        path.join(nfd_dir, "nfd_win.cpp")
+    }
+
+    includedirs
+    {
+        "Visualiser/vendor/nativefiledialog/src/include"
+    }
+
+    filter "system:windows"
+        systemversion "latest"
+        cppdialect "C++17"
+        staticruntime "On"
 --[[
 
     Below is borrowed from https://github.com/jpcy/bgfx-minimal-example under the BSD 2-clause license:

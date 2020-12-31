@@ -17,3 +17,9 @@
 [submodule "Visualiser/vendor/imgui"]
 	path = Visualiser/vendor/imgui
 	url = https://github.com/ocornut/imgui
+[submodule "Visualiser/vendor/nativefiledialog"]
+	path = Visualiser/vendor/nativefiledialog
+	url = https://github.com/mlabbe/nativefiledialog
+[submodule "Visualiser/vendor/implot"]
+	path = Visualiser/vendor/implot
+	url = https://github.com/epezent/implot

@@ -11,15 +11,19 @@
 
 #include <GLFW/glfw3.h>
 
+#include <nfd.h>
+
 #include <imgui.h>
 #include "ImGuiImpl.h"
+
+#include <string>
+#include <vector>
+#include <cstdlib>
 
 Window mainWindow;
 
 u32 WIDTH = 1280;
 u32 HEIGHT = 720;
-
-bgfx::FrameBufferHandle mainFrameBuffer;
 
 /*
 What do I want to be able to do?
@@ -29,6 +33,8 @@ What do I want to be able to do?
 -- Display buttons and menu and things
 
 */
+
+std::vector<float> depth_data;
 
 struct PosColorVertex
 {
@@ -115,9 +121,56 @@ bgfx::ShaderHandle loadDefaultShader(const char* filename)
 	return bgfx::createShader(mem);
 }
 
+// @TODO: Move this to a worker thread so it doesn't block the main window
 void LoadDepthData()
 {
+	char* filepath = NULL;
+	nfdresult_t open_result = NFD_OpenDialog(NULL, NULL, &filepath);
+	if (open_result == NFD_CANCEL)
+	{
+		return;
+	}
+	else if (open_result == NFD_ERROR)
+	{
+		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
+		return;
+	}
 	
+	FILE* file = fopen(filepath, "rb");
+	if (file == NULL)
+	{
+		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+	}
+
+	fseek(file, 0, SEEK_END);
+	u32 filesize = ftell(file);
+	fseek(file, 0, SEEK_SET);
+
+	char* mem = (char*)malloc(filesize+1);
+	fread(mem, 1, filesize, file);
+	mem[filesize] = '\n';
+	fclose(file);
+
+	// @TODO: Maybe hold onto the old data to not replace it if the input is bad?
+	depth_data.clear();
+
+	for (u32 index = 0; index < filesize; index++)
+	{
+		u32 start = index;
+		while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
+		{
+			index++;
+		}
+		if (mem[index] != '\n')
+		{
+			LOG_ERROR("Malformed depth data input: Expected number or newline, got {0} at {1}.", mem[index], index);
+			goto cleanup;
+		}
+		depth_data.push_back(std::stof(std::string(&mem[start], index - start)));
+	}
+	LOG_INFO("Loaded depth data from \"{0}\".", filepath);
+cleanup:
+	free(mem);
 }
 
 int main(int argc, char** argv)
@@ -241,23 +294,53 @@ int main(int argc, char** argv)
 		ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
 		ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
 
+		bool need_load_layout = false;
+		std::string layout_path = "";
 		if (ImGui::BeginMenuBar())
 		{
 			if (ImGui::BeginMenu("File"))
 			{
-				if (ImGui::BeginMenu("Open..."))
+				if (ImGui::BeginMenu("Open"))
 				{
-					if (ImGui::MenuItem("Depth Data", "Ctrl+D"))
+					if (ImGui::MenuItem("Depth Data"))
 					{
 						LoadDepthData();
+					}
+					if (ImGui::MenuItem("Orientation Data"))
+					{
+
+					}
+					if (ImGui::MenuItem("Cached Data"))
+					{
+
 					}
 					ImGui::EndMenu();
 				}
 
-				if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S"))
-					;
+				if (ImGui::BeginMenu("Save"))
+				{
+					if (ImGui::MenuItem("Depth Cache"))
+					{
+
+					}
+					if (ImGui::MenuItem("Orientation Cache"))
+					{
+
+					}
+					ImGui::EndMenu();
+				}
 
 				if (ImGui::MenuItem("Exit")) running = false;
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::BeginMenu("Window"))
+			{
+				if (ImGui::MenuItem("Default Layout"))
+				{
+					need_load_layout = true;
+					layout_path = "assets/default_layout.ini";
+				}
 				ImGui::EndMenu();
 			}
 
@@ -271,6 +354,11 @@ int main(int argc, char** argv)
 		ImGui::End();
 
 		ImGui::Begin("Depth Graph");
+		ImGui::PlotHistogram("Depth", [](void* data, int idx)
+			{
+				std::vector<float>& f_data = *(std::vector<float>*)data;
+				return f_data.at(idx);
+			}, &depth_data, depth_data.size());
 		ImGui::End();
 
 		ImGui::End();
@@ -282,6 +370,12 @@ int main(int argc, char** argv)
 
 		bgfx::frame();
 		counter++;
+
+		if (need_load_layout)
+		{
+			// We are not allowed to load these while a frame is in progress, so we wait until afer ImGui::Render
+			ImGui::LoadIniSettingsFromDisk(layout_path.c_str());
+		}
 	}
 
 	imguiShutdown();
