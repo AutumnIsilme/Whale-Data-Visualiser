@@ -13,5 +13,6 @@ bin-int/
 **.vcxproj.user
 
 obj/Debug
+obj/Release
 
 Visualiser/assets/data/
