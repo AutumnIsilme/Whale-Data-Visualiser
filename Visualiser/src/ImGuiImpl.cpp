@@ -319,6 +319,11 @@ void imguiEvents(float dt)
 
 void imguiRender(ImDrawData* drawData, uint16_t vid)
 {
+	int fb_width = (int)(drawData->DisplaySize.x * drawData->FramebufferScale.x);
+	int fb_height = (int)(drawData->DisplaySize.y * drawData->FramebufferScale.y);
+	if (fb_width <= 0 || fb_height <= 0)
+		return;
+
 	float L = drawData->DisplayPos.x;
 	float R = drawData->DisplayPos.x + drawData->DisplaySize.x;
 	float T = drawData->DisplayPos.y;
@@ -385,10 +390,11 @@ void imguiRender(ImDrawData* drawData, uint16_t vid)
 				//bgfx::setScissor(clip_rect.x, clip_rect.y, clip_rect.z, clip_rect.w);
 				if (clip_rect.x < drawData->DisplaySize.x * drawData->FramebufferScale.x && clip_rect.y < drawData->DisplaySize.y * drawData->FramebufferScale.y && clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
 				{
+					bgfx::setScissor(clip_rect.x, clip_rect.y, clip_rect.z - clip_rect.x, clip_rect.w - clip_rect.y);
+					//bgfx::setScissor(cmd->ClipRect.x - drawData->DisplayPos.x, cmd->ClipRect.y - drawData->DisplayPos.y, cmd->ClipRect.z - drawData->DisplayPos.x, cmd->ClipRect.w - drawData->DisplayPos.y);
 					glm::mat4 model = glm::mat4(1.0f);
 					model = glm::translate(model, { -2.0f * (float)drawData->DisplayPos.x / (float)drawData->DisplaySize.x, 2.0f * (float)drawData->DisplayPos.y / (float)drawData->DisplaySize.y, 0.0f });
 					bgfx::setTransform(&model[0][0]);
-					bgfx::setScissor(cmd->ClipRect.x - drawData->DisplayPos.x, cmd->ClipRect.y - drawData->DisplayPos.y, cmd->ClipRect.z - drawData->DisplayPos.x, cmd->ClipRect.w - drawData->DisplayPos.y);
 					bgfx::setState(state);
 					bgfx::setTexture(0, imguiFontUniform, th);
 					bgfx::setVertexBuffer(0, &tvb, 0, numVertices);
@@ -582,6 +588,7 @@ static void ImGui_ImplGlfw_CreateWindow(ImGuiViewport* viewport)
 	// With GLFW 3.3, the hint GLFW_FOCUS_ON_SHOW fixes this problem
 	glfwWindowHint(GLFW_VISIBLE, false);
 	glfwWindowHint(GLFW_FOCUSED, false);
+	glfwWindowHint(GLFW_RESIZABLE, true);
 	#if GLFW_HAS_FOCUS_ON_SHOW
 	glfwWindowHint(GLFW_FOCUS_ON_SHOW, false);
 	#endif
@@ -883,8 +890,6 @@ static void ImGui_ImplGlfw_UpdateMonitors()
 static void ImGui_ImplBgfx_RenderWindow(ImGuiViewport* viewport, void*)
 {
 	ImGuiViewportDataBgfx* data = (ImGuiViewportDataBgfx*)viewport->RendererUserData;
-	bgfx::setViewFrameBuffer(data->vid, data->fbh);
-	bgfx::setViewRect(data->vid, 0, 0, viewport->Size.x, viewport->Size.y);
 	imguiRender(viewport->DrawData, data->vid);
 }
 
@@ -896,8 +901,8 @@ static void ImGui_ImplBgfx_CreateWindow(ImGuiViewport* viewport)
 	data->fbh = bgfx::createFrameBuffer(viewport->PlatformHandleRaw, viewport->Size.x, viewport->Size.y);
 	data->vid = 201; // @HACK This might work. Please generate a proper unique view id.
 	bgfx::setViewClear(201, BGFX_CLEAR_COLOR, 0x00000000);
-	//bgfx::setViewFrameBuffer(data->vid, data->fbh);
-	//bgfx::setViewRect(data->vid, 0, 0, viewport->Size.x, viewport->Size.y);
+	bgfx::setViewFrameBuffer(data->vid, data->fbh);
+	bgfx::setViewRect(data->vid, 0, 0, viewport->Size.x, viewport->Size.y);
 }
 
 static void ImGui_ImplBgfx_DestroyWindow(ImGuiViewport* viewport)
@@ -920,8 +925,8 @@ static void ImGui_ImplBgfx_SetWindowSize(ImGuiViewport* viewport, ImVec2 size)
 	if (bgfx::isValid(data->fbh))
 		bgfx::destroy(data->fbh);
 	data->fbh = bgfx::createFrameBuffer(glfwGetWin32Window(glfw_data->Window), size.x, size.y);
-	//bgfx::setViewFrameBuffer(data->vid, data->fbh);
-	//bgfx::setViewRect(data->vid, 0, 0, viewport->Size.x, viewport->Size.y);
+	bgfx::setViewFrameBuffer(data->vid, data->fbh);
+	bgfx::setViewRect(data->vid, 0, 0, viewport->Size.x, viewport->Size.y);
 	
 	if (!(viewport->Flags & ImGuiViewportFlags_NoRendererClear))
 	{

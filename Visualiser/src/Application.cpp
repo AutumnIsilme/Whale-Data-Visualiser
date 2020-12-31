@@ -66,8 +66,6 @@ static const uint16_t cubeTriList[] =
 	0, 1, 2,
 };
 
-static bgfx::FrameBufferHandle window2fbh;
-
 void reset(s32 width, s32 height)
 {
 	WIDTH = width;
@@ -79,9 +77,9 @@ void reset(s32 width, s32 height)
 	bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
 	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x00FF00FF, 1.0f, 0);
 	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
-	bgfx::setViewFrameBuffer(1, window2fbh);
+	/*bgfx::setViewFrameBuffer(1, window2fbh);
 	bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF, 1.0f, 0);
-	bgfx::setViewRect(1, 0, 0, 480, 360);
+	bgfx::setViewRect(1, 0, 0, 480, 360);*/
 }
 
 bgfx::ShaderHandle loadDefaultShader(const char* filename)
@@ -117,6 +115,11 @@ bgfx::ShaderHandle loadDefaultShader(const char* filename)
 	return bgfx::createShader(mem);
 }
 
+void LoadDepthData()
+{
+	
+}
+
 int main(int argc, char** argv)
 {
 	Log::Init();
@@ -142,7 +145,7 @@ int main(int argc, char** argv)
 
 	LOG_INFO("Renderer: {0} via bgfx", bgfx::getRendererName(bgfx::getRendererType()));
 
-	bgfx::VertexLayout layout;
+	/*bgfx::VertexLayout layout;
 	layout.begin()
 		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
 		.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
@@ -152,7 +155,7 @@ int main(int argc, char** argv)
 
 	bgfx::ShaderHandle vertex_shader = loadDefaultShader("vs_cubes.bin");
 	bgfx::ShaderHandle fragment_shader = loadDefaultShader("fs_cubes.bin");
-	bgfx::ProgramHandle shader_program = bgfx::createProgram(vertex_shader, fragment_shader, true);
+	bgfx::ProgramHandle shader_program = bgfx::createProgram(vertex_shader, fragment_shader, true);*/
 
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -163,24 +166,22 @@ int main(int argc, char** argv)
 	imguiInit(&mainWindow);
 	imguiReset(WIDTH, HEIGHT);
 
-	bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
-	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x00FF00FF, 1.0f, 0);
-	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
-
 	imguiInstallCallbacks();
 
-	Window window2;
+	/*Window window2;
 	window2.Init(480, 360, false);
 	window2fbh = bgfx::createFrameBuffer(window2.GetPlatformWindow(), 480, 360);
 	bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF, 1.0f, 0);
-	bgfx::setViewRect(1, 0, 0, 480, 360);
+	bgfx::setViewRect(1, 0, 0, 480, 360);*/
 
 	reset(WIDTH, HEIGHT);
 
 	u32 counter = 0;
 	float time, lastTime = 0;
 	float dt;
-	while (true)
+	bool running = true;
+	bool dockspace_open = true;
+	while (running)
 	{
 		bgfx::touch(0);
 		bgfx::touch(1);
@@ -189,31 +190,90 @@ int main(int argc, char** argv)
 		lastTime = time;
 		if (mainWindow.Update())
 		{
+			running = false;
 			break;
 		}
+		if (WIDTH == 0 || HEIGHT == 0)
+			continue;
 		imguiEvents(dt);
 		ImGui::NewFrame();
 
-		glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 1.0f, 0.0f });
-		glm::mat4 projection = glm::perspective(glm::radians(60.0f), float(WIDTH) / float(HEIGHT), 0.1f, 100.0f);
-		bgfx::setViewTransform(0, &view[0][0], &projection[0][0]);
-		glm::mat4 rotation = glm::mat4(1.0f);
-		rotation = glm::translate(rotation, { 1.0f, 0.0f, 0.0f });
-		rotation *= glm::yawPitchRoll(counter * 0.01f, counter * 0.01f, 0.0f);
-		bgfx::setTransform(&rotation[0][0]);
+		//glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 1.0f, 0.0f });
+		//glm::mat4 projection = glm::perspective(glm::radians(60.0f), float(WIDTH) / float(HEIGHT), 0.1f, 100.0f);
+		//bgfx::setViewTransform(0, &view[0][0], &projection[0][0]);
+		//glm::mat4 rotation = glm::mat4(1.0f);
+		//rotation = glm::translate(rotation, { 1.0f, 0.0f, 0.0f });
+		//rotation *= glm::yawPitchRoll(counter * 0.01f, counter * 0.01f, 0.0f);
+		//bgfx::setTransform(&rotation[0][0]);
 
-		bgfx::setVertexBuffer(0, vertex_buffer);
-		bgfx::setIndexBuffer(index_buffer);
-		bgfx::submit(0, shader_program);
+		//bgfx::setVertexBuffer(0, vertex_buffer);
+		//bgfx::setIndexBuffer(index_buffer);
+		//bgfx::submit(0, shader_program);
 
-		projection = glm::perspective(glm::radians(60.0f), float(480) / float(360), 0.1f, 100.0f);
-		bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
+		//projection = glm::perspective(glm::radians(60.0f), float(480) / float(360), 0.1f, 100.0f);
+		//bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
 
-		bgfx::setTransform(&rotation[0][0]);
-		bgfx::setVertexBuffer(0, vertex_buffer);
-		bgfx::setIndexBuffer(index_buffer);
-		bgfx::submit(1, shader_program);
-		ImGui::ShowDemoWindow();
+		//bgfx::setTransform(&rotation[0][0]);
+		//bgfx::setVertexBuffer(0, vertex_buffer);
+		//bgfx::setIndexBuffer(index_buffer);
+		//bgfx::submit(1, shader_program);
+		//ImGui::ShowDemoWindow();
+
+		static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+
+		ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+		ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(viewport->Pos);
+		ImGui::SetNextWindowSize(viewport->Size);
+		ImGui::SetNextWindowViewport(viewport->ID);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+		window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+		window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+		if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
+			window_flags |= ImGuiWindowFlags_NoBackground;
+
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+		ImGui::Begin("DockSpace", &dockspace_open, window_flags);
+		ImGui::PopStyleVar(3);
+
+		ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+		ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+
+		if (ImGui::BeginMenuBar())
+		{
+			if (ImGui::BeginMenu("File"))
+			{
+				if (ImGui::BeginMenu("Open..."))
+				{
+					if (ImGui::MenuItem("Depth Data", "Ctrl+D"))
+					{
+						LoadDepthData();
+					}
+					ImGui::EndMenu();
+				}
+
+				if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S"))
+					;
+
+				if (ImGui::MenuItem("Exit")) running = false;
+				ImGui::EndMenu();
+			}
+
+			ImGui::EndMenuBar();
+		}
+
+		ImGui::Begin("Orientation Graphs");
+		ImGui::End();
+
+		ImGui::Begin("3D Viewport");
+		ImGui::End();
+
+		ImGui::Begin("Depth Graph");
+		ImGui::End();
+
+		ImGui::End();
 
 		ImGui::Render();
 		imguiRender(ImGui::GetDrawData(), 200);
@@ -225,8 +285,8 @@ int main(int argc, char** argv)
 	}
 
 	imguiShutdown();
-	bgfx::destroy(vertex_buffer);
-	bgfx::destroy(index_buffer);
+	/*bgfx::destroy(vertex_buffer);
+	bgfx::destroy(index_buffer);*/
 	bgfx::shutdown();
 
 	return 0;
