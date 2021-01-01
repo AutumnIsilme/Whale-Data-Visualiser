@@ -37,8 +37,14 @@ What do I want to be able to do?
 */
 
 std::vector<float> depth_data;
-std::vector<float> depth_x_data;
+std::vector<float> pitch_data;
+std::vector<float> roll_data;
+std::vector<float> yaw_data;
+std::vector<float> x_data;
 u8 just_loaded_depth = 0;
+u8 just_loaded_pitch = 0;
+u8 just_loaded_roll  = 0;
+u8 just_loaded_yaw   = 0;
 
 struct PosColorVertex
 {
@@ -48,7 +54,27 @@ struct PosColorVertex
 	uint32_t abgr;
 };
 
-static PosColorVertex cubeVertices[] =
+/*0.0 1.0 0.0
+0.0 -1.0 1.0
+0.5 -1.0 -1.0
+-0.5 -1.0 -1.0*/
+static PosColorVertex pointerVertices[] =
+{
+	{ 0.0f,  2.0f,  0.0f, 0xff0000ff },
+	{ 0.0f, -1.0f,  1.0f, 0xff00ff00 },
+	{ 0.5f, -1.0f, -1.0f, 0xff00ffff },
+	{-0.5f, -1.0f, -1.0f, 0xffff0000 },
+};
+
+static const uint16_t pointerTriList[] =
+{
+	0, 1, 2,
+	0, 3, 1,
+	0, 2, 3,
+	1, 3, 2,
+};
+
+static PosColorVertex s_cubeVertices[] =
 {
 	{-1.0f,  1.0f,  1.0f, 0xff000000 },
 	{ 1.0f,  1.0f,  1.0f, 0xff0000ff },
@@ -60,20 +86,20 @@ static PosColorVertex cubeVertices[] =
 	{ 1.0f, -1.0f, -1.0f, 0xffffffff },
 };
 
-static const uint16_t cubeTriList[] =
+static const uint16_t s_cubeTriList[] =
 {
-	6, 3, 7,
-	2, 3, 6,
-	4, 5, 1,
-	0, 4, 1,
-	5, 7, 3,
-	1, 5, 3,
-	4, 2, 6,
-	0, 2, 4,
-	5, 6, 7,
-	4, 6, 5,
-	1, 3, 2,
-	0, 1, 2,
+	0, 2, 1, // 0
+	1, 2, 3,
+	4, 5, 6, // 2
+	5, 7, 6,
+	0, 4, 2, // 4
+	4, 6, 2,
+	1, 3, 5, // 6
+	5, 3, 7,
+	0, 1, 4, // 8
+	4, 1, 5,
+	2, 6, 3, // 10
+	6, 7, 3,
 };
 
 void reset(s32 width, s32 height)
@@ -87,9 +113,6 @@ void reset(s32 width, s32 height)
 	bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
 	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x00FF00FF, 1.0f, 0);
 	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
-	/*bgfx::setViewFrameBuffer(1, window2fbh);
-	bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF, 1.0f, 0);
-	bgfx::setViewRect(1, 0, 0, 480, 360);*/
 }
 
 bgfx::ShaderHandle loadDefaultShader(const char* filename)
@@ -125,8 +148,18 @@ bgfx::ShaderHandle loadDefaultShader(const char* filename)
 	return bgfx::createShader(mem);
 }
 
+enum class DataType
+{
+	DEPTH = 0,
+	PITCH,
+	ROLL,
+	YAW,
+
+	COUNT
+};
+
 // @TODO: Move this to a worker thread so it doesn't block the main window
-void LoadDepthData()
+void LoadData(std::vector<float>& data, DataType type)
 {
 	char* filepath = NULL;
 	nfdresult_t open_result = NFD_OpenDialog(NULL, NULL, &filepath);
@@ -144,6 +177,7 @@ void LoadDepthData()
 	if (file == NULL)
 	{
 		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		return;
 	}
 
 	fseek(file, 0, SEEK_END);
@@ -156,8 +190,11 @@ void LoadDepthData()
 	fclose(file);
 
 	// @TODO: Maybe hold onto the old data to not replace it if the input is bad?
-	depth_data.clear();
-	depth_x_data.clear();
+	data.clear();
+	bool do_set_x_data = false;
+	if (x_data.size() == 0)
+		do_set_x_data = true;
+	//depth_x_data.clear();
 
 	for (u32 index = 0; index < filesize; index++)
 	{
@@ -168,16 +205,88 @@ void LoadDepthData()
 		}
 		if (mem[index] != '\n')
 		{
-			LOG_ERROR("Malformed depth data input: Expected number or newline, got {0} at {1}.", mem[index], index);
+			LOG_ERROR("Malformed data input: Expected number or newline, got {0} at {1}.", mem[index], index);
 			goto cleanup;
 		}
-		depth_data.push_back(-std::stof(std::string(&mem[start], index - start)));
-		depth_x_data.push_back(depth_x_data.size());
+		data.push_back(-std::stof(std::string(&mem[start], index - start)));
+		if (do_set_x_data)
+			x_data.push_back(x_data.size());
 	}
-	LOG_INFO("Loaded depth data from \"{0}\".", filepath);
-	just_loaded_depth = 3;
+
+	switch (type)
+	{
+	case DataType::DEPTH:
+		LOG_INFO("Loaded depth data from \"{0}\".", filepath);
+		just_loaded_depth = 3;
+		break;
+	case DataType::PITCH:
+		LOG_INFO("Loaded pitch data from \"{0}\".", filepath);
+		just_loaded_pitch = 3;
+		break;
+	case DataType::ROLL:
+		LOG_INFO("Loaded roll data from \"{0}\".", filepath);
+		just_loaded_roll = 3;
+		break;
+	case DataType::YAW:
+		LOG_INFO("Loaded heading data from \"{0}\".", filepath);
+		just_loaded_yaw = 3;
+		break;
+
+	case DataType::COUNT:
+	default:
+		LOG_WARN("Unrecognised data type provided, loaded from \"{0}\".", filepath);
+		break;
+	}
 cleanup:
 	free(mem);
+}
+
+void LoadStlModel(std::string filepath, char** vertices, int** indices, int* vertex_count)
+{
+	FILE* file = fopen(filepath.c_str(), "rb");
+	if (file == NULL)
+	{
+		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		return;
+	}
+	fseek(file, 0, SEEK_END);
+	u32 filesize = ftell(file);
+	fseek(file, 0, SEEK_SET);
+
+	char* mem = (char*)malloc(filesize);
+	fread(mem, 1, filesize, file);
+	fclose(file);
+
+	uint32_t tri_count = *(uint32_t*)&mem[80];
+	uint16_t attr_count = *(uint16_t*)&mem[132];
+	int stride = attr_count + 14;
+	float *vertices_tmp = (float*)&mem[88];
+
+	*vertex_count = tri_count * 3;
+	*vertices = (char*)malloc(tri_count * 3 * (3 * sizeof(float) + 4 * sizeof(char)));
+	*indices = (int*)malloc(tri_count * 3 * sizeof(int));
+	for (uint32_t i = 0; i < tri_count; i++)
+	{
+		*(float*)(&((*vertices)[48 * i +  0])) = vertices_tmp[0];
+		*(float*)(&((*vertices)[48 * i +  4])) = vertices_tmp[1];
+		*(float*)(&((*vertices)[48 * i +  8])) = vertices_tmp[2];
+		*(float*)(&((*vertices)[48 * i + 12])) = vertices_tmp[3];
+		*(float*)(&((*vertices)[48 * i + 16])) = vertices_tmp[4];
+		*(float*)(&((*vertices)[48 * i + 20])) = vertices_tmp[5];
+		*(float*)(&((*vertices)[48 * i + 24])) = vertices_tmp[6];
+		*(float*)(&((*vertices)[48 * i + 28])) = vertices_tmp[7];
+		*(float*)(&((*vertices)[48 * i + 32])) = vertices_tmp[8];
+
+		(*vertices)[48 * i + 36] = 0xDC;
+		(*vertices)[48 * i + 40] = 0xDC;
+		(*vertices)[48 * i + 44] = 0xDC;
+		(*vertices)[48 * i + 48] = 0xFF;
+		vertices_tmp = ((float*)(((char*)vertices_tmp) + stride));
+		
+		(*indices)[3 * i + 0] = 3 * i + 0;
+		(*indices)[3 * i + 1] = 3 * i + 1;
+		(*indices)[3 * i + 2] = 3 * i + 2;
+	}
 }
 
 int main(int argc, char** argv)
@@ -212,10 +321,23 @@ int main(int argc, char** argv)
 		.end();
 	bgfx::VertexBufferHandle vertex_buffer = bgfx::createVertexBuffer(bgfx::makeRef(cubeVertices, sizeof(cubeVertices)), layout);
 	bgfx::IndexBufferHandle index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(cubeTriList, sizeof(cubeTriList)));
-
+	*/
 	bgfx::ShaderHandle vertex_shader = loadDefaultShader("vs_cubes.bin");
 	bgfx::ShaderHandle fragment_shader = loadDefaultShader("fs_cubes.bin");
-	bgfx::ProgramHandle shader_program = bgfx::createProgram(vertex_shader, fragment_shader, true);*/
+	bgfx::ProgramHandle shader_program = bgfx::createProgram(vertex_shader, fragment_shader, true);
+
+	/*float* vertices = NULL;
+	int* indices = NULL;
+	int count = 0;
+	LoadStlModel("assets/basic_model.stl", (char**)&vertices, &indices, &count);
+	*/
+	bgfx::VertexLayout layout;
+	layout.begin()
+		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+		.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+		.end();
+	bgfx::VertexBufferHandle vertex_buffer = bgfx::createVertexBuffer(bgfx::makeRef(pointerVertices, sizeof(pointerVertices)), layout);
+	bgfx::IndexBufferHandle index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(pointerTriList, sizeof(pointerTriList)));
 
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -236,6 +358,10 @@ int main(int argc, char** argv)
 	bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF, 1.0f, 0);
 	bgfx::setViewRect(1, 0, 0, 480, 360);*/
 
+	bgfx::FrameBufferHandle model_viewport = BGFX_INVALID_HANDLE;
+	bgfx::TextureHandle texture_handle = BGFX_INVALID_HANDLE;
+	glm::vec2 model_viewport_size_cache = glm::vec2(0.0f, 0.0f);
+
 	reset(WIDTH, HEIGHT);
 
 	u32 counter = 0;
@@ -243,10 +369,14 @@ int main(int argc, char** argv)
 	float dt;
 	bool running = true;
 	bool dockspace_open = true;
+	float temporal_index = 0;
+	glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 1.0f, 0.0f });
+	glm::mat4 projection = glm::mat4(1.0f);
+	glm::vec3 orientation = glm::vec3(0.0f);
+
 	while (running)
 	{
 		bgfx::touch(0);
-		bgfx::touch(1);
 		time = (float)glfwGetTime();
 		dt = time - lastTime;
 		lastTime = time;
@@ -260,26 +390,13 @@ int main(int argc, char** argv)
 		imguiEvents(dt);
 		ImGui::NewFrame();
 
-		//glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 1.0f, 0.0f });
-		//glm::mat4 projection = glm::perspective(glm::radians(60.0f), float(WIDTH) / float(HEIGHT), 0.1f, 100.0f);
-		//bgfx::setViewTransform(0, &view[0][0], &projection[0][0]);
-		//glm::mat4 rotation = glm::mat4(1.0f);
-		//rotation = glm::translate(rotation, { 1.0f, 0.0f, 0.0f });
-		//rotation *= glm::yawPitchRoll(counter * 0.01f, counter * 0.01f, 0.0f);
-		//bgfx::setTransform(&rotation[0][0]);
-
-		//bgfx::setVertexBuffer(0, vertex_buffer);
-		//bgfx::setIndexBuffer(index_buffer);
-		//bgfx::submit(0, shader_program);
-
-		//projection = glm::perspective(glm::radians(60.0f), float(480) / float(360), 0.1f, 100.0f);
-		//bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
-
-		//bgfx::setTransform(&rotation[0][0]);
-		//bgfx::setVertexBuffer(0, vertex_buffer);
-		//bgfx::setIndexBuffer(index_buffer);
-		//bgfx::submit(1, shader_program);
-		//ImGui::ShowDemoWindow();
+		/*
+		bgfx::setTransform(&rotation[0][0]);
+		bgfx::setVertexBuffer(0, vertex_buffer);
+		bgfx::setIndexBuffer(index_buffer);
+		bgfx::submit(1, shader_program);
+		ImGui::ShowDemoWindow();
+		*/
 
 		static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
 
@@ -304,6 +421,7 @@ int main(int argc, char** argv)
 		ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
 
 		bool need_load_layout = false;
+		bool need_save_layout = false;
 		std::string layout_path = "";
 		if (ImGui::BeginMenuBar())
 		{
@@ -313,13 +431,25 @@ int main(int argc, char** argv)
 				{
 					if (ImGui::MenuItem("Depth Data"))
 					{
-						LoadDepthData();
+						LoadData(depth_data, DataType::DEPTH);
 					}
-					if (ImGui::MenuItem("Orientation Data"))
+					if (ImGui::MenuItem("Pitch Data"))
+					{
+						LoadData(pitch_data, DataType::PITCH);
+					}
+					if (ImGui::MenuItem("Roll Data"))
+					{
+						LoadData(roll_data, DataType::ROLL);
+					}
+					if (ImGui::MenuItem("Heading Data"))
+					{
+						LoadData(yaw_data, DataType::YAW);
+					}
+					if (ImGui::MenuItem("Depth Cache"))
 					{
 
 					}
-					if (ImGui::MenuItem("Cached Data"))
+					if (ImGui::MenuItem("Orientation Cache"))
 					{
 
 					}
@@ -350,35 +480,156 @@ int main(int argc, char** argv)
 					need_load_layout = true;
 					layout_path = "assets/default_layout.ini";
 				}
+				if (ImGui::MenuItem("Save Layout"))
+				{
+					need_save_layout = true;
+					layout_path = "assets/default_layout.ini";
+				}
+				if (ImGui::MenuItem("Load Layout"))
+				{
+
+				}
 				ImGui::EndMenu();
 			}
 
 			ImGui::EndMenuBar();
 		}
 
-		ImGui::Begin("Orientation Graphs");
+		ImGui::Begin("Timeline");
+		{
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+			ImGui::SliderFloat("", &temporal_index, 0, x_data.size() - 1, "%.0f");
+		}
+		ImGui::End();
+
+		ImGui::Begin("Pitch Graph");
+		{
+			ImPlot::SetNextPlotLimits(-200, pitch_data.size() + 200, -3, 3, just_loaded_pitch ? ImGuiCond_Always : ImGuiCond_Once);
+			if (ImPlot::BeginPlot("Pitch Data", "Time", "Pitch"))
+			{
+				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+				int start = (int)ImPlot::GetPlotLimits().X.Min;
+				start = start < 0 ? 0 : (start > pitch_data.size() - 1 ? pitch_data.size() - 1 : start);
+				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+				end = end < 0 ? 0 : end > pitch_data.size() - 1 ? pitch_data.size() - 1 : end;
+				int size = (end - start) / downsample;
+				while (size * downsample > pitch_data.size())
+				{
+					size--;
+				}
+				ImPlot::PlotLine("Data", &x_data.data()[start], &pitch_data.data()[start], size, 0, sizeof(float) * downsample);
+				if (pitch_data.size() != 0)
+					ImPlot::PlotScatter("Current", &temporal_index, &pitch_data[(int)temporal_index], 1);
+				ImPlot::EndPlot();
+			}
+		}
+		ImGui::End();
+
+		ImGui::Begin("Roll Graph");
+		{
+			ImPlot::SetNextPlotLimits(-200, roll_data.size() + 200, -3, 3, just_loaded_roll ? ImGuiCond_Always : ImGuiCond_Once);
+			if (ImPlot::BeginPlot("Roll Data", "Time", "Roll"))
+			{
+				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+				int start = (int)ImPlot::GetPlotLimits().X.Min;
+				start = start < 0 ? 0 : (start > roll_data.size() - 1 ? roll_data.size() - 1 : start);
+				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+				end = end < 0 ? 0 : end > roll_data.size() - 1 ? roll_data.size() - 1 : end;
+				int size = (end - start) / downsample;
+				while (size * downsample > roll_data.size())
+				{
+					size--;
+				}
+				ImPlot::PlotLine("Data", &x_data.data()[start], &roll_data.data()[start], size, 0, sizeof(float) * downsample);
+				if (roll_data.size() != 0)
+					ImPlot::PlotScatter("Current", &temporal_index, &roll_data[(int)temporal_index], 1);
+				ImPlot::EndPlot();
+			}
+		}
+		ImGui::End();
+
+		ImGui::Begin("Yaw Graph");
+		{
+			ImPlot::SetNextPlotLimits(-200, yaw_data.size() + 200, -3, 3, just_loaded_yaw ? ImGuiCond_Always : ImGuiCond_Once);
+			if (ImPlot::BeginPlot("Heading Data", "Time", "Yaw"))
+			{
+				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+				int start = (int)ImPlot::GetPlotLimits().X.Min;
+				start = start < 0 ? 0 : (start > yaw_data.size() - 1 ? yaw_data.size() - 1 : start);
+				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+				end = end < 0 ? 0 : end > yaw_data.size() - 1 ? yaw_data.size() - 1 : end;
+				int size = (end - start) / downsample;
+				while (size * downsample > yaw_data.size())
+				{
+					size--;
+				}
+				ImPlot::PlotLine("Data", &x_data.data()[start], &yaw_data.data()[start], size, 0, sizeof(float) * downsample);
+				if (yaw_data.size() != 0)
+					ImPlot::PlotScatter("Current", &temporal_index, &yaw_data[(int)temporal_index], 1);
+				ImPlot::EndPlot();
+			}
+		}
 		ImGui::End();
 
 		ImGui::Begin("3D Viewport");
+		{
+			ImVec2 available_space = ImGui::GetContentRegionAvail();
+			if (!bgfx::isValid(model_viewport) || available_space.x != model_viewport_size_cache.x || available_space.y != model_viewport_size_cache.y)
+			{
+				model_viewport_size_cache.x = available_space.x;
+				model_viewport_size_cache.y = available_space.y;
+				LOG_INFO("Recreating framebuffer: {0}, {1}.", model_viewport_size_cache.x, model_viewport_size_cache.y);
+				if (bgfx::isValid(model_viewport))
+				{
+					bgfx::destroy(model_viewport);
+				}
+				texture_handle = bgfx::createTexture2D(available_space.x, available_space.y, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_RT);
+				model_viewport = bgfx::createFrameBuffer(1, &texture_handle);
+				bgfx::setViewFrameBuffer(1, model_viewport);
+				bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF);
+				bgfx::setViewRect(1, 0, 0, available_space.x, available_space.y);
+
+				projection = glm::perspective(glm::radians(60.0f), float(available_space.x) / float(available_space.y), 0.1f, 100.0f);
+				bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
+			}
+			glm::mat4 rotation = glm::mat4(1.0f);
+			if (yaw_data.size() != 0 && pitch_data.size() != 0 && roll_data.size() != 0)
+				rotation *= glm::yawPitchRoll(yaw_data[temporal_index], pitch_data[temporal_index], roll_data[temporal_index]);
+			bgfx::setTransform(&rotation[0][0]);
+
+			bgfx::setVertexBuffer(1, vertex_buffer);
+			bgfx::setIndexBuffer(index_buffer);
+			bgfx::submit(1, shader_program);
+			bgfx::touch(1);
+
+			ImGui::Image((void*)texture_handle.idx, available_space);
+		}
 		ImGui::End();
 
 		ImGui::Begin("Depth Graph");
-		ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
-		if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
 		{
-			ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
-			int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
-			int start = (int)ImPlot::GetPlotLimits().X.Min;
-			start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
-			int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
-			end = end < 0 ? 0 : end > depth_data.size() - 1 ? depth_data.size() - 1 : end;
-			int size = (end - start) / downsample;
-			while (size * downsample > depth_data.size())
+			ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
 			{
-				size--;
+				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+				int start = (int)ImPlot::GetPlotLimits().X.Min;
+				start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
+				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+				end = end < 0 ? 0 : end > depth_data.size() - 1 ? depth_data.size() - 1 : end;
+				int size = (end - start) / downsample;
+				while (size * downsample > depth_data.size())
+				{
+					size--;
+				}
+				ImPlot::PlotLine("Data", &x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
+				if (depth_data.size() != 0)
+					ImPlot::PlotScatter("Current", &temporal_index, &depth_data[(int)temporal_index], 1);
+				ImPlot::EndPlot();
 			}
-			ImPlot::PlotLine("Data", &depth_x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
-			ImPlot::EndPlot();
 		}
 		ImGui::End();
 
@@ -397,9 +648,19 @@ int main(int argc, char** argv)
 			// We are not allowed to load these while a frame is in progress, so we wait until afer ImGui::Render
 			ImGui::LoadIniSettingsFromDisk(layout_path.c_str());
 		}
+		if (need_save_layout)
+		{
+			ImGui::SaveIniSettingsToDisk(layout_path.c_str());
+		}
 
 		if (just_loaded_depth)
-			just_loaded_depth -= 1;
+			just_loaded_depth--;
+		if (just_loaded_pitch)
+			just_loaded_pitch--;
+		if (just_loaded_roll)
+			just_loaded_roll--;
+		if (just_loaded_yaw)
+			just_loaded_yaw--;
 	}
 	LOG_INFO("Shutting down.");
 
