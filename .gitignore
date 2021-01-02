@@ -16,3 +16,5 @@ obj/Debug
 obj/Release
 
 Visualiser/assets/data/
+Visualiser/assets/shaders
+builds/

@@ -18,6 +18,8 @@
 
 #include <implot.h>
 
+#include <stb_image.h>
+
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -40,6 +42,7 @@ std::vector<float> depth_data;
 std::vector<float> pitch_data;
 std::vector<float> roll_data;
 std::vector<float> yaw_data;
+std::vector<float> yaw_sin_data;
 std::vector<float> x_data;
 u8 just_loaded_depth = 0;
 u8 just_loaded_pitch = 0;
@@ -54,10 +57,6 @@ struct PosColorVertex
 	uint32_t abgr;
 };
 
-/*0.0 1.0 0.0
-0.0 -1.0 1.0
-0.5 -1.0 -1.0
--0.5 -1.0 -1.0*/
 static PosColorVertex pointerVertices[] =
 {
 	{ 0.0f,  2.0f,  0.0f, 0xff0000ff },
@@ -102,6 +101,10 @@ static const uint16_t s_cubeTriList[] =
 	6, 7, 3,
 };
 
+bgfx::TextureHandle play_button_texture_play;
+bgfx::TextureHandle play_button_texture_pause;
+bgfx::TextureHandle settings_button_texture;
+
 void reset(s32 width, s32 height)
 {
 	WIDTH = width;
@@ -117,18 +120,18 @@ void reset(s32 width, s32 height)
 
 bgfx::ShaderHandle loadDefaultShader(const char* filename)
 {
-	std::string filepath = "X:\\Data visualiser\\Visualiser\\vendor\\bgfx\\examples\\runtime\\shaders";
+	std::string filepath = "assets\\shaders\\";
 	switch (bgfx::getRendererType())
 	{
 	case bgfx::RendererType::Noop:
-	case bgfx::RendererType::Direct3D9: filepath.append("\\dx9\\"); break;
+	case bgfx::RendererType::Direct3D9: filepath.append("dx9\\"); break;
 	case bgfx::RendererType::Direct3D11:
-	case bgfx::RendererType::Direct3D12: filepath.append("\\dx11\\"); break;
-	case bgfx::RendererType::Gnm: filepath.append("\\pssl\\"); break;
-	case bgfx::RendererType::Metal: filepath.append("\\metal\\"); break;
-	case bgfx::RendererType::OpenGL: filepath.append("\\glsl\\"); break;
-	case bgfx::RendererType::OpenGLES: filepath.append("\\essl\\"); break;
-	case bgfx::RendererType::Vulkan: filepath.append("\\spirv\\"); break;
+	case bgfx::RendererType::Direct3D12: filepath.append("dx11\\"); break;
+	case bgfx::RendererType::Gnm: filepath.append("pssl\\"); break;
+	case bgfx::RendererType::Metal: filepath.append("metal\\"); break;
+	case bgfx::RendererType::OpenGL: filepath.append("glsl\\"); break;
+	case bgfx::RendererType::OpenGLES: filepath.append("essl\\"); break;
+	case bgfx::RendererType::Vulkan: filepath.append("spirv\\"); break;
 	default:
 		break;
 	}
@@ -211,6 +214,8 @@ void LoadData(std::vector<float>& data, DataType type)
 		data.push_back(-std::stof(std::string(&mem[start], index - start)));
 		if (do_set_x_data)
 			x_data.push_back(x_data.size());
+		if (type == DataType::YAW)
+			yaw_sin_data.push_back(glm::sin(-std::stof(std::string(&mem[start], index - start))));
 	}
 
 	switch (type)
@@ -241,52 +246,20 @@ cleanup:
 	free(mem);
 }
 
-void LoadStlModel(std::string filepath, char** vertices, int** indices, int* vertex_count)
+void LoadPlayPauseTextures()
 {
-	FILE* file = fopen(filepath.c_str(), "rb");
-	if (file == NULL)
-	{
-		LOG_ERROR("Failed to open file \"{0}\".", filepath);
-		return;
-	}
-	fseek(file, 0, SEEK_END);
-	u32 filesize = ftell(file);
-	fseek(file, 0, SEEK_SET);
+	int width, height, channels;
+	stbi_set_flip_vertically_on_load(1);
+	stbi_uc *data = stbi_load("assets/play.png", &width, &height, &channels, 0);
+	play_button_texture_play = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
 
-	char* mem = (char*)malloc(filesize);
-	fread(mem, 1, filesize, file);
-	fclose(file);
+	stbi_set_flip_vertically_on_load(1);
+	data = stbi_load("assets/pause.png", &width, &height, &channels, 0);
+	play_button_texture_pause = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
 
-	uint32_t tri_count = *(uint32_t*)&mem[80];
-	uint16_t attr_count = *(uint16_t*)&mem[132];
-	int stride = attr_count + 14;
-	float *vertices_tmp = (float*)&mem[88];
-
-	*vertex_count = tri_count * 3;
-	*vertices = (char*)malloc(tri_count * 3 * (3 * sizeof(float) + 4 * sizeof(char)));
-	*indices = (int*)malloc(tri_count * 3 * sizeof(int));
-	for (uint32_t i = 0; i < tri_count; i++)
-	{
-		*(float*)(&((*vertices)[48 * i +  0])) = vertices_tmp[0];
-		*(float*)(&((*vertices)[48 * i +  4])) = vertices_tmp[1];
-		*(float*)(&((*vertices)[48 * i +  8])) = vertices_tmp[2];
-		*(float*)(&((*vertices)[48 * i + 12])) = vertices_tmp[3];
-		*(float*)(&((*vertices)[48 * i + 16])) = vertices_tmp[4];
-		*(float*)(&((*vertices)[48 * i + 20])) = vertices_tmp[5];
-		*(float*)(&((*vertices)[48 * i + 24])) = vertices_tmp[6];
-		*(float*)(&((*vertices)[48 * i + 28])) = vertices_tmp[7];
-		*(float*)(&((*vertices)[48 * i + 32])) = vertices_tmp[8];
-
-		(*vertices)[48 * i + 36] = 0xDC;
-		(*vertices)[48 * i + 40] = 0xDC;
-		(*vertices)[48 * i + 44] = 0xDC;
-		(*vertices)[48 * i + 48] = 0xFF;
-		vertices_tmp = ((float*)(((char*)vertices_tmp) + stride));
-		
-		(*indices)[3 * i + 0] = 3 * i + 0;
-		(*indices)[3 * i + 1] = 3 * i + 1;
-		(*indices)[3 * i + 2] = 3 * i + 2;
-	}
+	stbi_set_flip_vertically_on_load(1);
+	data = stbi_load("assets/settings.png", &width, &height, &channels, 0);
+	settings_button_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
 }
 
 int main(int argc, char** argv)
@@ -364,13 +337,18 @@ int main(int argc, char** argv)
 
 	reset(WIDTH, HEIGHT);
 
+	LoadPlayPauseTextures();
+
 	u32 counter = 0;
 	float time, lastTime = 0;
 	float dt;
+	float sum_dt = 0.0f;
 	bool running = true;
+	bool playing = false;
 	bool dockspace_open = true;
 	float temporal_index = 0;
-	glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 1.0f, 0.0f });
+	float flow_rate = 1.0f;
+	glm::mat4 view = glm::lookAt(glm::vec3(0.0f, -5.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 0.0f, 1.0f });
 	glm::mat4 projection = glm::mat4(1.0f);
 	glm::vec3 orientation = glm::vec3(0.0f);
 
@@ -497,8 +475,37 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("Timeline");
 		{
-			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+			if (ImGui::ImageButton(IMGUI_TEXTURE_FROM_BGFX(playing ? play_button_texture_play : play_button_texture_pause), ImVec2(13.0f, 13.0f)))
+			{
+				playing = !playing;
+			}
+			if (playing)
+			{
+				sum_dt += dt;
+				while (sum_dt > (1.0f / 20.0f) / flow_rate)
+				{
+					temporal_index++;
+					sum_dt -= (1.0f / 20.0f) / flow_rate;
+				}
+			}
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 28);
 			ImGui::SliderFloat("", &temporal_index, 0, x_data.size() - 1, "%.0f");
+			ImGui::SameLine();
+
+			if (ImGui::ImageButton(IMGUI_TEXTURE_FROM_BGFX(settings_button_texture), ImVec2(13.0f, 13.0f)))
+			{
+				ImGui::OpenPopup("Player Settings");
+			}
+
+			ImGui::SetNextWindowPos(ImVec2(ImGui::GetMousePos().x, ImGui::GetMousePos().y - 64), ImGuiCond_Appearing);
+			if (ImGui::BeginPopup("Player Settings"))
+			{
+				ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f);
+				if (ImGui::Button("Reset"))
+					flow_rate = 1.0f;
+				ImGui::EndPopup();
+			}
 		}
 		ImGui::End();
 
@@ -566,7 +573,7 @@ int main(int argc, char** argv)
 				{
 					size--;
 				}
-				ImPlot::PlotLine("Data", &x_data.data()[start], &yaw_data.data()[start], size, 0, sizeof(float) * downsample);
+				ImPlot::PlotLine("Data", &x_data.data()[start], &yaw_sin_data.data()[start], size, 0, sizeof(float) * downsample);
 				if (yaw_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &yaw_data[(int)temporal_index], 1);
 				ImPlot::EndPlot();
@@ -589,7 +596,7 @@ int main(int argc, char** argv)
 				texture_handle = bgfx::createTexture2D(available_space.x, available_space.y, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_RT);
 				model_viewport = bgfx::createFrameBuffer(1, &texture_handle);
 				bgfx::setViewFrameBuffer(1, model_viewport);
-				bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF);
+				bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x3483ebFF);
 				bgfx::setViewRect(1, 0, 0, available_space.x, available_space.y);
 
 				projection = glm::perspective(glm::radians(60.0f), float(available_space.x) / float(available_space.y), 0.1f, 100.0f);
@@ -605,7 +612,7 @@ int main(int argc, char** argv)
 			bgfx::submit(1, shader_program);
 			bgfx::touch(1);
 
-			ImGui::Image((void*)texture_handle.idx, available_space);
+			ImGui::Image(IMGUI_TEXTURE_FROM_BGFX(texture_handle), available_space);
 		}
 		ImGui::End();
 

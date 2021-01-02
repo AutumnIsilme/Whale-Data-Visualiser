@@ -12,3 +12,5 @@ void imguiRender(ImDrawData* drawData, unsigned short vid = 200);
 void imguiShutdown();
 const char* imguiGetClipboardText(void* userData);
 void imguiSetClipboardText(void* userData, const char* text);
+
+#define IMGUI_TEXTURE_FROM_BGFX(x) ((void*)((x).idx))
