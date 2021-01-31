@@ -2,6 +2,9 @@
 #include "Window.h"
 #include "Application.h"
 
+#include "Shaders.h"
+#include "TextureShaders.h"
+
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
 
@@ -23,6 +26,9 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+
+_getShader(vs_texture);
+_getShader(fs_texture);
 
 Window mainWindow;
 
@@ -57,6 +63,16 @@ struct PosColorVertex
 	uint32_t abgr;
 };
 
+struct PosColTexVertex
+{
+	float x;
+	float y;
+	float z;
+	uint32_t abgr;
+	float u;
+	float v;
+};
+
 static PosColorVertex pointerVertices[] =
 {
 	{ 0.0f,  2.0f,  0.0f, 0xff0000ff },
@@ -85,6 +101,63 @@ static PosColorVertex s_cubeVertices[] =
 	{ 1.0f, -1.0f, -1.0f, 0xffffffff },
 };
 
+static PosColTexVertex s_XZAxes[] =
+{
+	{-3.0f, -3.0f, -3.0f,   0xffffffff,   0.0f, 0.0f},
+	{-3.0f,  3.0f, -3.0f,   0xffffffff,   0.0f, 1.0f},
+	{ 3.0f,  3.0f, -3.0f,   0xffffffff,   1.0f, 1.0f},
+	{ 3.0f, -3.0f, -3.0f,   0xffffffff,   1.0f, 0.0f}
+};
+
+static PosColTexVertex s_XYAxes[] =
+{
+	{-3.0f,  3.0f, -3.0f,   0xffffffff,   0.0f, 0.0f},
+	{-3.0f,  3.0f,  3.0f,   0xffffffff,   0.0f, 1.0f},
+	{ 3.0f,  3.0f,  3.0f,   0xffffffff,   1.0f, 1.0f},
+	{ 3.0f,  3.0f, -3.0f,   0xffffffff,   1.0f, 0.0f}
+};
+
+static PosColTexVertex s_YZAxes[] =
+{
+	{-3.0f, -3.0f, -3.0f,   0xffffffff,   0.0f, 0.0f},
+	{-3.0f, -3.0f,  3.0f,   0xffffffff,   0.0f, 1.0f},
+	{-3.0f,  3.0f,  3.0f,   0xffffffff,   1.0f, 1.0f},
+	{-3.0f,  3.0f, -3.0f,   0xffffffff,   1.0f, 0.0f}
+};
+
+/*
+static PosColorVertex s_XZAxes[] =
+{
+	{-3.0f, -3.0f, -3.0f,   0xff000000},
+	{-3.0f,  3.0f, -3.0f,   0xff0000ff},
+	{ 3.0f,  3.0f, -3.0f,   0xff00ffff},
+	{ 3.0f, -3.0f, -3.0f,   0xffffffff}
+};
+
+static PosColorVertex s_XYAxes[] =
+{
+	{-3.0f,  3.0f, -3.0f,   0xff000000},
+	{-3.0f,  3.0f,  3.0f,   0xff0000ff},
+	{ 3.0f,  3.0f,  3.0f,   0xff00ffff},
+	{ 3.0f,  3.0f, -3.0f,   0xffffffff}
+};
+
+static PosColorVertex s_YZAxes[] =
+{
+	{-3.0f, -3.0f, -3.0f,   0xff000000},
+	{-3.0f, -3.0f,  3.0f,   0xff0000ff},
+	{-3.0f,  3.0f,  3.0f,   0xff00ffff},
+	{-3.0f,  3.0f, -3.0f,   0xffffffff}
+};*/
+
+static const uint16_t s_AxesTris[] =
+{
+	0, 1, 2,
+	0, 2, 3,
+	0, 2, 1,
+	0, 3, 2
+};
+
 static const uint16_t s_cubeTriList[] =
 {
 	0, 2, 1, // 0
@@ -104,6 +177,7 @@ static const uint16_t s_cubeTriList[] =
 bgfx::TextureHandle play_button_texture_play;
 bgfx::TextureHandle play_button_texture_pause;
 bgfx::TextureHandle settings_button_texture;
+bgfx::TextureHandle test_texture;
 
 void reset(s32 width, s32 height)
 {
@@ -114,7 +188,7 @@ void reset(s32 width, s32 height)
 	imguiReset(width, height);
 
 	bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
-	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x00FF00FF, 1.0f, 0);
+	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000FF, 1.0f, 0);
 	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
 }
 
@@ -260,6 +334,147 @@ void LoadPlayPauseTextures()
 	stbi_set_flip_vertically_on_load(1);
 	data = stbi_load("assets/settings.png", &width, &height, &channels, 0);
 	settings_button_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
+
+	stbi_set_flip_vertically_on_load(1);
+	data = stbi_load("assets/test.png", &width, &height, &channels, 0);
+	test_texture = bgfx::createTexture2D(width, height, false, 1, channels == 3 ? bgfx::TextureFormat::RGB8 : bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
+}
+
+bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layout, bool *use_default_layout)
+{
+	if (ImGui::BeginMenuBar())
+	{
+		if (ImGui::BeginMenu("File"))
+		{
+			if (ImGui::BeginMenu("Open"))
+			{
+				if (ImGui::MenuItem("Depth Data"))
+				{
+					LoadData(depth_data, DataType::DEPTH);
+				}
+				if (ImGui::MenuItem("Pitch Data"))
+				{
+					LoadData(pitch_data, DataType::PITCH);
+				}
+				if (ImGui::MenuItem("Roll Data"))
+				{
+					LoadData(roll_data, DataType::ROLL);
+				}
+				if (ImGui::MenuItem("Heading Data"))
+				{
+					LoadData(yaw_data, DataType::YAW);
+				}
+				if (ImGui::MenuItem("Depth Cache"))
+				{
+
+				}
+				if (ImGui::MenuItem("Orientation Cache"))
+				{
+
+				}
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::BeginMenu("Save"))
+			{
+				if (ImGui::MenuItem("Depth Cache"))
+				{
+
+				}
+				if (ImGui::MenuItem("Orientation Cache"))
+				{
+
+				}
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::MenuItem("Exit")) running = false;
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::BeginMenu("Window"))
+		{
+			if (ImGui::MenuItem("Default Layout"))
+			{
+				*need_load_layout = true;
+				*use_default_layout = true;
+			}
+			if (ImGui::MenuItem("Save Default Layout"))
+			{
+				*need_save_layout = true;
+				*use_default_layout = true;
+			}
+			if (ImGui::MenuItem("Load Layout"))
+			{
+				*need_load_layout = true;
+			}
+			if (ImGui::MenuItem("Save Layout"))
+			{
+				*need_save_layout = true;
+			}
+			ImGui::EndMenu();
+		}
+
+		ImGui::EndMenuBar();
+	}
+	return running;
+}
+
+static double cursor_x;
+static double cursor_y;
+
+static double frame_x;
+static double frame_y;
+static double frame_width;
+static double frame_height;
+
+static bool changing_orientation = false;
+static double camera_heading = 0.0;
+static double camera_pitch = 0.0;
+
+static ImGuiID viewport_viewport;
+
+void on_mouse_button_down_event(int button)
+{
+	auto io = ImGui::GetIO();
+	if (button != 0)
+	{
+		return;
+	}
+	if (frame_x <= cursor_x && frame_x + frame_width >= cursor_x &&
+		frame_y <= cursor_y && frame_y + frame_height >= cursor_y &&
+		io.MouseHoveredViewport == viewport_viewport)
+	{
+		changing_orientation = true;
+	}
+}
+
+void on_mouse_button_up_event(int button)
+{
+	if (button == 0)
+		changing_orientation = false;
+}
+
+void on_mouse_move_event(double x, double y)
+{
+	if (changing_orientation)
+	{
+		double dx = x - cursor_x;
+		double dy = y - cursor_y;
+		camera_heading += dx / frame_width * 6.283185307179586;
+		camera_pitch += dy / frame_height * 3.141592653589793;
+		if (camera_pitch > 1.5707963267948966)
+			camera_pitch = 1.5707963267948966;
+		else if (camera_pitch < -1.5707963267948966)
+			camera_pitch = -1.5707963267948966;
+		if (camera_heading > 3.141592653589793)
+			camera_heading -= 6.283185307179586;
+		else if (camera_heading < -3.141592653589793)
+			camera_heading += 6.283185307179586;
+	}
+
+	cursor_x = x;
+	cursor_y = y;
 }
 
 int main(int argc, char** argv)
@@ -299,6 +514,10 @@ int main(int argc, char** argv)
 	bgfx::ShaderHandle fragment_shader = loadDefaultShader("fs_cubes.bin");
 	bgfx::ProgramHandle shader_program = bgfx::createProgram(vertex_shader, fragment_shader, true);
 
+	bgfx::ShaderHandle axes_vertex_shader = loadDefaultShader("vs_update.bin");
+	bgfx::ShaderHandle axes_fragment_shader = loadDefaultShader("fs_update.bin");
+	bgfx::ProgramHandle axes_shader_program = bgfx::createProgram(axes_vertex_shader, axes_fragment_shader, true);
+
 	/*float* vertices = NULL;
 	int* indices = NULL;
 	int count = 0;
@@ -312,6 +531,22 @@ int main(int argc, char** argv)
 	bgfx::VertexBufferHandle vertex_buffer = bgfx::createVertexBuffer(bgfx::makeRef(pointerVertices, sizeof(pointerVertices)), layout);
 	bgfx::IndexBufferHandle index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(pointerTriList, sizeof(pointerTriList)));
 
+	bgfx::VertexLayout pos_tex_layout;
+	pos_tex_layout.begin()
+		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+		.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+		.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+		.end();
+	bgfx::UniformHandle axes_uniform = bgfx::createUniform("s_tex", bgfx::UniformType::Sampler);
+	bgfx::ProgramHandle axes_shader;
+	bgfx::ShaderHandle vs = bgfx::createShader(bgfx::makeRef(vs_texture(), vs_texture_len()));
+	bgfx::ShaderHandle fs = bgfx::createShader(bgfx::makeRef(fs_texture(), fs_texture_len()));
+	axes_shader = bgfx::createProgram(vs, fs, true);
+	bgfx::VertexBufferHandle XZ_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_XZAxes, sizeof(s_XZAxes)), pos_tex_layout);
+	bgfx::VertexBufferHandle XY_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_XYAxes, sizeof(s_XYAxes)), pos_tex_layout);
+	bgfx::VertexBufferHandle YZ_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_YZAxes, sizeof(s_YZAxes)), pos_tex_layout);
+	bgfx::IndexBufferHandle axes_ibuffer = bgfx::createIndexBuffer(bgfx::makeRef(s_AxesTris, sizeof(s_AxesTris)));
+
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
@@ -319,6 +554,8 @@ int main(int argc, char** argv)
 	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
 
 	ImPlot::CreateContext();
+
+	imguiSetUserMousePosCallback((void(*)(void*, double, double))cursor_pos_callback);
 
 	imguiInit(&mainWindow);
 	imguiReset(WIDTH, HEIGHT);
@@ -346,6 +583,8 @@ int main(int argc, char** argv)
 	bool running = true;
 	bool playing = false;
 	bool dockspace_open = true;
+	bool do_overwrite_default_settings_dialog = false;
+	bool do_overwrite_default_settings = false;
 	float temporal_index = 0;
 	float flow_rate = 1.0f;
 	glm::mat4 view = glm::lookAt(glm::vec3(0.0f, -5.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 0.0f, 1.0f });
@@ -400,78 +639,8 @@ int main(int argc, char** argv)
 
 		bool need_load_layout = false;
 		bool need_save_layout = false;
-		std::string layout_path = "";
-		if (ImGui::BeginMenuBar())
-		{
-			if (ImGui::BeginMenu("File"))
-			{
-				if (ImGui::BeginMenu("Open"))
-				{
-					if (ImGui::MenuItem("Depth Data"))
-					{
-						LoadData(depth_data, DataType::DEPTH);
-					}
-					if (ImGui::MenuItem("Pitch Data"))
-					{
-						LoadData(pitch_data, DataType::PITCH);
-					}
-					if (ImGui::MenuItem("Roll Data"))
-					{
-						LoadData(roll_data, DataType::ROLL);
-					}
-					if (ImGui::MenuItem("Heading Data"))
-					{
-						LoadData(yaw_data, DataType::YAW);
-					}
-					if (ImGui::MenuItem("Depth Cache"))
-					{
-
-					}
-					if (ImGui::MenuItem("Orientation Cache"))
-					{
-
-					}
-					ImGui::EndMenu();
-				}
-
-				if (ImGui::BeginMenu("Save"))
-				{
-					if (ImGui::MenuItem("Depth Cache"))
-					{
-
-					}
-					if (ImGui::MenuItem("Orientation Cache"))
-					{
-
-					}
-					ImGui::EndMenu();
-				}
-
-				if (ImGui::MenuItem("Exit")) running = false;
-				ImGui::EndMenu();
-			}
-
-			if (ImGui::BeginMenu("Window"))
-			{
-				if (ImGui::MenuItem("Default Layout"))
-				{
-					need_load_layout = true;
-					layout_path = "assets/default_layout.ini";
-				}
-				if (ImGui::MenuItem("Save Layout"))
-				{
-					need_save_layout = true;
-					layout_path = "assets/default_layout.ini";
-				}
-				if (ImGui::MenuItem("Load Layout"))
-				{
-
-				}
-				ImGui::EndMenu();
-			}
-
-			ImGui::EndMenuBar();
-		}
+		bool use_default_layout = false;
+		running = create_menu_bar(running, &need_load_layout, &need_save_layout, &use_default_layout);
 
 		ImGui::Begin("Timeline");
 		{
@@ -583,7 +752,13 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("3D Viewport");
 		{
+			viewport_viewport = ImGui::GetWindowViewport()->ID;
 			ImVec2 available_space = ImGui::GetContentRegionAvail();
+			frame_width = available_space.x;
+			frame_height = available_space.y;
+			ImVec2 loc = ImGui::GetCursorScreenPos();
+			frame_x = loc.x - ImGui::GetWindowViewport()->Pos.x;
+			frame_y = loc.y - ImGui::GetWindowViewport()->Pos.y;
 			if (!bgfx::isValid(model_viewport) || available_space.x != model_viewport_size_cache.x || available_space.y != model_viewport_size_cache.y)
 			{
 				model_viewport_size_cache.x = available_space.x;
@@ -602,14 +777,41 @@ int main(int argc, char** argv)
 				projection = glm::perspective(glm::radians(60.0f), float(available_space.x) / float(available_space.y), 0.1f, 100.0f);
 				bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
 			}
-			glm::mat4 rotation = glm::mat4(1.0f);
+			glm::mat4 rotation = glm::mat4(1.0);
 			if (yaw_data.size() != 0 && pitch_data.size() != 0 && roll_data.size() != 0)
 				rotation *= glm::yawPitchRoll(yaw_data[temporal_index], pitch_data[temporal_index], roll_data[temporal_index]);
-			bgfx::setTransform(&rotation[0][0]);
+			rotation *= glm::yawPitchRoll(0.0f, (float)camera_pitch, 0.0f);
+			rotation *= glm::yawPitchRoll(0.0f, 0.0f, (float)camera_heading);
 
+			bool XZ_fore = camera_pitch < 0;// && !(camera_heading < -1.5707963267948966 || camera_heading > 1.5707963267948966) || camera_pitch > 0 && (camera_heading < -1.5707963267948966 || camera_heading > 1.5707963267948966);
+			bool YZ_fore = camera_heading > 0;
+			bool XY_fore = (camera_heading < -1.63/*5707963267948966*/ || camera_heading > 1.5707963267948966)  && !(camera_pitch < -1.4459012060099814 || camera_pitch > 1.4459012060099814);
+
+			//uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_MSAA | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA) | 0x100005000000000;//0x10000500656501f; // Magic number that might work
+
+			bgfx::setTransform(&rotation[0][0]);
+			bgfx::setVertexBuffer(1, XZ_vbuffer);
+			bgfx::setIndexBuffer(axes_ibuffer);
+			bgfx::setTexture(0, axes_uniform, test_texture);
+			bgfx::submit(1, axes_shader);
+
+			bgfx::setTransform(&rotation[0][0]);
+			bgfx::setVertexBuffer(1, XY_vbuffer);
+			bgfx::setIndexBuffer(axes_ibuffer);
+			bgfx::setTexture(0, axes_uniform, test_texture);
+			bgfx::submit(1, axes_shader);
+
+			bgfx::setTransform(&rotation[0][0]);
+			bgfx::setVertexBuffer(1, YZ_vbuffer);
+			bgfx::setIndexBuffer(axes_ibuffer);
+			bgfx::setTexture(0, axes_uniform, test_texture);
+			bgfx::submit(1, axes_shader);
+
+			bgfx::setTransform(&rotation[0][0]);
 			bgfx::setVertexBuffer(1, vertex_buffer);
 			bgfx::setIndexBuffer(index_buffer);
 			bgfx::submit(1, shader_program);
+
 			bgfx::touch(1);
 
 			ImGui::Image(IMGUI_TEXTURE_FROM_BGFX(texture_handle), available_space);
@@ -642,6 +844,26 @@ int main(int argc, char** argv)
 
 		ImGui::End();
 
+		if (do_overwrite_default_settings_dialog)
+		{
+			ImGui::Begin("Overwrite default layout?", &do_overwrite_default_settings_dialog);
+			{
+				ImGui::Text("Are you sure you want to overwrite the default layout?");
+				ImGui::Text("This is NOT recommended!");
+				if (ImGui::Button("Confirm"))
+				{
+					do_overwrite_default_settings = true;
+					do_overwrite_default_settings_dialog = false;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Cancel"))
+				{
+					do_overwrite_default_settings_dialog = false;
+				}
+			}
+			ImGui::End();
+		}
+
 		ImGui::Render();
 		imguiRender(ImGui::GetDrawData(), 200);
 		ImGui::UpdatePlatformWindows();
@@ -650,14 +872,51 @@ int main(int argc, char** argv)
 		bgfx::frame();
 		counter++;
 
+		std::string layout_path = "";
+		if (use_default_layout)
+		{
+			layout_path = "assets/default_layout.ini";
+		}
+		else if (need_load_layout || need_save_layout)
+		{
+			char* filepath = NULL;
+			nfdresult_t open_result;
+			if (need_load_layout)
+				open_result = NFD_OpenDialog(NULL, NULL, &filepath);
+			else
+				open_result = NFD_SaveDialog(NULL, NULL, &filepath);
+			if (open_result == NFD_CANCEL)
+			{
+				need_load_layout = need_save_layout = false;
+			}
+			else if (open_result == NFD_ERROR)
+			{
+				need_load_layout = need_save_layout = false;
+				LOG_ERROR("Open dialog failed: {}", NFD_GetError());
+			}
+			else
+			{
+				layout_path = std::string(filepath);
+				if (need_save_layout && layout_path.substr(layout_path.size() - 26, 26) == std::string("\\assets\\default_layout.ini"))
+				{
+					do_overwrite_default_settings_dialog = true;
+				}
+			}
+		}
 		if (need_load_layout)
 		{
 			// We are not allowed to load these while a frame is in progress, so we wait until afer ImGui::Render
 			ImGui::LoadIniSettingsFromDisk(layout_path.c_str());
 		}
-		if (need_save_layout)
+		if (need_save_layout && !do_overwrite_default_settings_dialog)
 		{
 			ImGui::SaveIniSettingsToDisk(layout_path.c_str());
+		}
+		if (do_overwrite_default_settings)
+		{
+			layout_path = "assets/default_layout.ini";
+			ImGui::SaveIniSettingsToDisk(layout_path.c_str());
+			do_overwrite_default_settings = false;
 		}
 
 		if (just_loaded_depth)
@@ -675,7 +934,6 @@ int main(int argc, char** argv)
 	/*bgfx::destroy(vertex_buffer);
 	bgfx::destroy(index_buffer);*/
 	bgfx::shutdown();
-
 
 	return 0;
 }

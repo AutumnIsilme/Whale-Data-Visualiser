@@ -28,10 +28,15 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 	case GLFW_RELEASE:
 		Application::OnEvent(MouseButtonReleaseEvent((MouseCode)button, mods));
 	}*/
+	if (action)
+		on_mouse_button_down_event(button);
+	else
+		on_mouse_button_up_event(button);
 }
 
 void cursor_pos_callback(GLFWwindow* window, double x, double y)
 {
+	on_mouse_move_event(x, y);
 	//Application::OnEvent(MouseMoveEvent(x, y));
 }
 

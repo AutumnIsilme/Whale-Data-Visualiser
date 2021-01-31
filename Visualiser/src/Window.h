@@ -18,3 +18,5 @@ private:
 	struct GLFWwindow* glfw_window = NULL;
 	bool init_succeeded = false;
 };
+
+void cursor_pos_callback(struct GLFWwindow* window, double x, double y);

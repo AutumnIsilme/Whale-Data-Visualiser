@@ -50,46 +50,11 @@ SOFTWARE.
 
 #include <stdint.h>
 
+#include "Shaders.h"
 #include "ImGuiShaders.h"
 
-#define _getShader(name)                                             \
-static const unsigned char* name()                                   \
-{                                                                    \
-	switch ( bgfx::getRendererType() )                               \
-	{                                                                \
-		case bgfx::RendererType::Noop:                               \
-		case bgfx::RendererType::Direct3D9:  return name##_dx9;      \
-		case bgfx::RendererType::Direct3D11:                         \
-		case bgfx::RendererType::Direct3D12: return name##_dx11;     \
-		case bgfx::RendererType::OpenGL:     return name##_glsl;     \
-		case bgfx::RendererType::OpenGLES:   return name##_essl;     \
-		case bgfx::RendererType::Gnm:        return NULL;            \
-		case bgfx::RendererType::Metal:      return name##_metal;    \
-		case bgfx::RendererType::Vulkan:     return name##_spirv;    \
-		case bgfx::RendererType::Count:      return NULL;            \
-	}                                                                \
-	return NULL;                                                     \
-}                                                                    \
-static const int name##_len()                                        \
-{                                                                    \
-	switch ( bgfx::getRendererType() )                               \
-	{                                                                \
-		case bgfx::RendererType::Noop:                               \
-		case bgfx::RendererType::Direct3D9:  return name##_dx9_len;  \
-		case bgfx::RendererType::Direct3D11:                         \
-		case bgfx::RendererType::Direct3D12: return name##_dx11_len; \
-		case bgfx::RendererType::OpenGL:     return name##_glsl_len; \
-		case bgfx::RendererType::OpenGLES:   return name##_essl_len; \
-		case bgfx::RendererType::Gnm:        return 0;               \
-		case bgfx::RendererType::Metal:      return name##_metal_len;\
-		case bgfx::RendererType::Vulkan:     return name##_spirv_len;\
-		case bgfx::RendererType::Count:      return 0;               \
-	}                                                                \
-	return 0;                                                        \
-}
 _getShader(vs_ocornut_imgui);
 _getShader(fs_ocornut_imgui);
-
 
 static bgfx::VertexLayout  imguiVertexLayout;
 static bgfx::TextureHandle imguiFontTexture;
@@ -108,12 +73,23 @@ static GLFWscrollfun        g_PrevUserCallbackScroll = NULL;
 static GLFWkeyfun           g_PrevUserCallbackKey = NULL;
 static GLFWcharfun          g_PrevUserCallbackChar = NULL;
 static GLFWmonitorfun       g_PrevUserCallbackMonitor = NULL;
+static GLFWcursorposfun     g_UserCallbackCursorPos = NULL;
 
 static void ImGui_ImplGlfw_UpdateMonitors();
 static void ImGui_ImplGlfw_InitPlatformInterface();
 static void ImGui_ImplBgfx_InitPlatformInterface();
 static void ImGui_ImplBgfx_RenderWindow(ImGuiViewport* viewport, void*);
 void ImGui_ImplGlfw_MonitorCallback(GLFWmonitor*, int);
+
+void imguiSetUserMousePosCallback(void(*callback)(void*, double, double))
+{
+	g_UserCallbackCursorPos = (GLFWcursorposfun)callback;
+}
+
+bgfx::ProgramHandle getShaderProgram()
+{
+	return imguiProgram;
+}
 
 void imguiInit(Window* window)
 {
@@ -271,9 +247,9 @@ static void ImGui_ImplGlfw_UpdateMousePosAndButtons()
 		// rectangles and last focused time of every viewports it knows about. It will be unaware of other windows that may be sitting between or over your windows.
 		// [GLFW] FIXME: This is currently only correct on Win32. See what we do below with the WM_NCHITTEST, missing an equivalent for other systems.
 		// See https://github.com/glfw/glfw/issues/1236 if you want to help in making this a GLFW feature.
-		#if GLFW_HAS_MOUSE_PASSTHROUGH || (GLFW_HAS_WINDOW_HOVERED && defined(_WIN32))
+		#if 1 || (1 && defined(_WIN32))
 		const bool window_no_input = (viewport->Flags & ImGuiViewportFlags_NoInputs) != 0;
-		#if GLFW_HAS_MOUSE_PASSTHROUGH
+		#if 1
 		glfwSetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH, window_no_input);
 		#endif
 		if (glfwGetWindowAttrib(window, GLFW_HOVERED) && !window_no_input)
@@ -446,8 +422,8 @@ void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int acti
 	{
 		io.MouseDown[button] = false;
 	}
-
-	if (g_PrevUserCallbackMousebutton != NULL && g_Window == window && !io.WantCaptureMouse)
+	
+	if (g_PrevUserCallbackMousebutton != NULL /*&& g_Window == window */ /*&& !io.WantCaptureMouse*/)
 		g_PrevUserCallbackMousebutton(window, button, action, mods);
 	
 }
@@ -606,6 +582,7 @@ static void ImGui_ImplGlfw_CreateWindow(ImGuiViewport* viewport)
 	glfwSetWindowPos(data->Window, (int)viewport->Pos.x, (int)viewport->Pos.y);
 
 	// Install GLFW callbacks for secondary viewports
+	//glfwSetMouseButtonCallback(data->Window, (GLFWmousebuttonfun*)[](GLFWwindow* window, int button, int action, int mods){ ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods); })
 	glfwSetMouseButtonCallback(data->Window, ImGui_ImplGlfw_MouseButtonCallback);
 	glfwSetScrollCallback(data->Window, ImGui_ImplGlfw_ScrollCallback);
 	glfwSetKeyCallback(data->Window, ImGui_ImplGlfw_KeyCallback);
@@ -613,6 +590,11 @@ static void ImGui_ImplGlfw_CreateWindow(ImGuiViewport* viewport)
 	glfwSetWindowCloseCallback(data->Window, ImGui_ImplGlfw_WindowCloseCallback);
 	glfwSetWindowPosCallback(data->Window, ImGui_ImplGlfw_WindowPosCallback);
 	glfwSetWindowSizeCallback(data->Window, ImGui_ImplGlfw_WindowSizeCallback);
+
+	if (g_UserCallbackCursorPos)
+	{
+		glfwSetCursorPosCallback(data->Window, g_UserCallbackCursorPos);
+	}
 
 	if (bgfx::getRendererType() == bgfx::RendererType::OpenGL)
 	{
