@@ -238,21 +238,8 @@ enum class DataType
 	COUNT
 };
 
-// @TODO: Move this to a worker thread so it doesn't block the main window
-void LoadData(std::vector<float>& data, DataType type)
+void ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepath)
 {
-	char* filepath = NULL;
-	nfdresult_t open_result = NFD_OpenDialog(NULL, NULL, &filepath);
-	if (open_result == NFD_CANCEL)
-	{
-		return;
-	}
-	else if (open_result == NFD_ERROR)
-	{
-		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
-		return;
-	}
-	
 	FILE* file = fopen(filepath, "rb");
 	if (file == NULL)
 	{
@@ -264,7 +251,7 @@ void LoadData(std::vector<float>& data, DataType type)
 	u32 filesize = ftell(file);
 	fseek(file, 0, SEEK_SET);
 
-	char* mem = (char*)malloc(filesize+1);
+	char* mem = (char*)malloc(filesize + 1);
 	fread(mem, 1, filesize, file);
 	mem[filesize] = '\n';
 	fclose(file);
@@ -323,6 +310,24 @@ cleanup:
 	free(mem);
 }
 
+// @TODO: Move this to a worker thread so it doesn't block the main window
+void LoadData(std::vector<float>& data, DataType type)
+{
+	char* filepath = NULL;
+	nfdresult_t open_result = NFD_OpenDialog(NULL, NULL, &filepath);
+	if (open_result == NFD_CANCEL)
+	{
+		return;
+	}
+	else if (open_result == NFD_ERROR)
+	{
+		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
+		return;
+	}
+	ActuallyLoadData(data, type, filepath);
+	free(filepath);
+}
+
 void LoadPlayPauseTextures()
 {
 	int width, height, channels;
@@ -379,11 +384,7 @@ bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layou
 				{
 					LoadData(yaw_data, DataType::YAW);
 				}
-				if (ImGui::MenuItem("Depth Cache"))
-				{
-
-				}
-				if (ImGui::MenuItem("Orientation Cache"))
+				if (ImGui::MenuItem("Data Cache"))
 				{
 
 				}
@@ -392,11 +393,7 @@ bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layou
 
 			if (ImGui::BeginMenu("Save"))
 			{
-				if (ImGui::MenuItem("Depth Cache"))
-				{
-
-				}
-				if (ImGui::MenuItem("Orientation Cache"))
+				if (ImGui::MenuItem("Data Cache"))
 				{
 
 				}
