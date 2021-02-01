@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include <sstream>
 
 _getShader(vs_texture);
 _getShader(fs_texture);
@@ -238,13 +239,13 @@ enum class DataType
 	COUNT
 };
 
-void ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepath)
+int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepath)
 {
 	FILE* file = fopen(filepath, "rb");
 	if (file == NULL)
 	{
 		LOG_ERROR("Failed to open file \"{0}\".", filepath);
-		return;
+		return 1;
 	}
 
 	fseek(file, 0, SEEK_END);
@@ -252,6 +253,7 @@ void ActuallyLoadData(std::vector<float>& data, DataType type, const char* filep
 	fseek(file, 0, SEEK_SET);
 
 	char* mem = (char*)malloc(filesize + 1);
+	defer { free(mem); };
 	fread(mem, 1, filesize, file);
 	mem[filesize] = '\n';
 	fclose(file);
@@ -273,7 +275,7 @@ void ActuallyLoadData(std::vector<float>& data, DataType type, const char* filep
 		if (mem[index] != '\n')
 		{
 			LOG_ERROR("Malformed data input: Expected number or newline, got {0} at {1}.", mem[index], index);
-			goto cleanup;
+			return 2;
 		}
 		data.push_back(-std::stof(std::string(&mem[start], index - start)));
 		if (do_set_x_data)
@@ -306,11 +308,159 @@ void ActuallyLoadData(std::vector<float>& data, DataType type, const char* filep
 		LOG_WARN("Unrecognised data type provided, loaded from \"{0}\".", filepath);
 		break;
 	}
-cleanup:
-	free(mem);
+
+	return 0;
 }
 
-// @TODO: Move this to a worker thread so it doesn't block the main window
+static std::string filepaths[4] = { "", "", "", "" };
+
+void LoadDataCache()
+{
+	char* filepath = NULL;
+	nfdresult_t open_result = NFD_OpenDialog(NULL, NULL, &filepath);
+	defer{ free(filepath); };
+	if (open_result == NFD_CANCEL)
+	{
+		return;
+	} else if (open_result == NFD_ERROR)
+	{
+		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
+		return;
+	}
+
+	FILE* file = fopen(filepath, "rb");
+	if (file == NULL)
+	{
+		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		return;
+	}
+
+	fseek(file, 0, SEEK_END);
+	u32 filesize = ftell(file);
+	fseek(file, 0, SEEK_SET);
+
+	char* mem = (char*)malloc(filesize + 1);
+	defer{ free(mem); };
+	fread(mem, 1, filesize, file);
+	mem[filesize] = '\n';
+	fclose(file);
+
+	char* head = mem;
+	int done[4] = { 0 };
+	while (head < mem + filesize)
+	{
+		char type = *head;
+		head += 2;
+		u64 count = 0;
+		while (*head != '\n' && *head != '\r')
+		{
+			head++;
+			count++;
+		}
+		char* fname = (char*)malloc(count + 1);
+		defer{ free(fname); };
+		memcpy(fname, head - count, count);
+		fname[count] = 0;
+
+		switch (type)
+		{
+		case '0':
+		{
+			if (!done[0])
+			{
+				int result = ActuallyLoadData(depth_data, DataType::DEPTH, fname);
+				if (!result)
+					filepaths[0] = std::string(fname);
+				done[0] = 1;
+			} else
+			{
+				LOG_WARN("Multiple data of the same type (Depth) present at filename {}", fname);
+			}
+		} break;
+		case '1':
+		{
+			if (!done[1])
+			{
+				int result = ActuallyLoadData(pitch_data, DataType::PITCH, fname);
+				if (!result)
+					filepaths[1] = std::string(fname);
+				done[1] = 1;
+			} else
+			{
+				LOG_WARN("Multiple data of the same type (Pitch) present at filename {}", fname);
+			}
+		} break;
+		case '2':
+		{
+			if (!done[2])
+			{
+				int result = ActuallyLoadData(roll_data, DataType::ROLL, fname);
+				if (!result)
+					filepaths[2] = std::string(fname);
+				done[2] = 1;
+			} else
+			{
+				LOG_WARN("Multiple data of the same type (Roll) present at filename {}", fname);
+			}
+		} break;
+		case '3':
+		{
+			if (!done[3])
+			{
+				int result = ActuallyLoadData(yaw_data, DataType::YAW, fname);
+				if (!result)
+					filepaths[3] = std::string(fname);
+				done[3] = 1;
+			} else
+			{
+				LOG_WARN("Multiple data of the same type (Heading) present at filename {}", fname);
+			}
+		} break;
+		default:
+			break;
+		}
+
+		while (*head == '\n' || *head == '\r')
+		{
+			head++;
+		}
+	}
+	LOG_INFO("Loaded data cache from {}", filepath);
+}
+
+void SaveDataCache()
+{
+	char* filepath = NULL;
+	nfdresult_t open_result = NFD_SaveDialog(NULL, NULL, &filepath);
+	if (open_result == NFD_CANCEL)
+	{
+		return;
+	} else if (open_result == NFD_ERROR)
+	{
+		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
+		return;
+	}
+
+	FILE* file = fopen(filepath, "wb");
+	if (file == NULL)
+	{
+		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		return;
+	}
+
+	for (int i = 0; i < 4; i++)
+	{
+		if (filepaths[i].size() != 0)
+		{
+			fprintf(file, "%d %s\n", i, filepaths[i].c_str());
+		}
+	}
+	fclose(file);
+	LOG_INFO("Saved data cache to {}", filepath);
+	free(filepath);
+}
+
+// @TODO: Move this to a worker thread so it doesn't block the main window?
 void LoadData(std::vector<float>& data, DataType type)
 {
 	char* filepath = NULL;
@@ -324,7 +474,9 @@ void LoadData(std::vector<float>& data, DataType type)
 		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
 		return;
 	}
-	ActuallyLoadData(data, type, filepath);
+	int result = ActuallyLoadData(data, type, filepath);
+	if (!result)
+		filepaths[(int)type] = std::string(filepath);
 	free(filepath);
 }
 
@@ -386,7 +538,7 @@ bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layou
 				}
 				if (ImGui::MenuItem("Data Cache"))
 				{
-
+					LoadDataCache();
 				}
 				ImGui::EndMenu();
 			}
@@ -395,7 +547,7 @@ bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layou
 			{
 				if (ImGui::MenuItem("Data Cache"))
 				{
-
+					SaveDataCache();
 				}
 				ImGui::EndMenu();
 			}
