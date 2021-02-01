@@ -177,7 +177,10 @@ static const uint16_t s_cubeTriList[] =
 bgfx::TextureHandle play_button_texture_play;
 bgfx::TextureHandle play_button_texture_pause;
 bgfx::TextureHandle settings_button_texture;
-bgfx::TextureHandle test_texture;
+bgfx::TextureHandle xy_axes_texture;
+bgfx::TextureHandle xz_axes_texture;
+bgfx::TextureHandle yz_axes_texture;
+bgfx::TextureHandle whale_texture;
 
 void reset(s32 width, s32 height)
 {
@@ -336,8 +339,20 @@ void LoadPlayPauseTextures()
 	settings_button_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
 
 	stbi_set_flip_vertically_on_load(1);
-	data = stbi_load("assets/test.png", &width, &height, &channels, 0);
-	test_texture = bgfx::createTexture2D(width, height, false, 1, channels == 3 ? bgfx::TextureFormat::RGB8 : bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
+	data = stbi_load("assets/XY_Axes.png", &width, &height, &channels, 0);
+	xy_axes_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_SAMPLER_UVW_CLAMP, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
+
+	stbi_set_flip_vertically_on_load(1);
+	data = stbi_load("assets/XZ_Axes.png", &width, &height, &channels, 0);
+	xz_axes_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_SAMPLER_UVW_CLAMP, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
+
+	stbi_set_flip_vertically_on_load(1);
+	data = stbi_load("assets/YZ_Axes.png", &width, &height, &channels, 0);
+	yz_axes_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_SAMPLER_UVW_CLAMP, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
+
+	stbi_set_flip_vertically_on_load(1);
+	data = stbi_load("assets/white.png", &width, &height, &channels, 0);
+	whale_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_SAMPLER_UVW_CLAMP, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
 }
 
 bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layout, bool *use_default_layout)
@@ -743,7 +758,7 @@ int main(int argc, char** argv)
 				{
 					size--;
 				}
-				ImPlot::PlotLine("Data", &x_data.data()[start], &yaw_sin_data.data()[start], size, 0, sizeof(float) * downsample);
+				ImPlot::PlotLine("Data", &x_data.data()[start], &yaw_data.data()[start], size, 0, sizeof(float) * downsample);
 				if (yaw_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &yaw_data[(int)temporal_index], 1);
 				ImPlot::EndPlot();
@@ -779,48 +794,53 @@ int main(int argc, char** argv)
 				bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
 			}
 			glm::mat4 rotation = glm::mat4(1.0);
-			if (yaw_data.size() != 0 && pitch_data.size() != 0 && roll_data.size() != 0)
-				rotation *= glm::yawPitchRoll(yaw_data[temporal_index], pitch_data[temporal_index], roll_data[temporal_index]);
+			glm::mat4 axes_rotation = glm::mat4(1.0);
 			rotation *= glm::yawPitchRoll(0.0f, (float)camera_pitch, 0.0f);
 			rotation *= glm::yawPitchRoll(0.0f, 0.0f, (float)camera_heading);
-
+			axes_rotation *= glm::yawPitchRoll(0.0f, (float)camera_pitch, 0.0f);
+			axes_rotation *= glm::yawPitchRoll(0.0f, 0.0f, (float)camera_heading);
+			if (yaw_data.size() != 0 && pitch_data.size() != 0 && roll_data.size() != 0)
+				rotation *= glm::yawPitchRoll(roll_data[temporal_index], pitch_data[temporal_index], yaw_data[temporal_index]);
+			
 			bool XZ_fore = camera_pitch < 0;// && !(camera_heading < -1.5707963267948966 || camera_heading > 1.5707963267948966) || camera_pitch > 0 && (camera_heading < -1.5707963267948966 || camera_heading > 1.5707963267948966);
 			bool YZ_fore = camera_heading > 0;
 			bool XY_fore = (camera_heading < -1.63/*5707963267948966*/ || camera_heading > 1.5707963267948966)  && !(camera_pitch < -1.4459012060099814 || camera_pitch > 1.4459012060099814);
 
 			//uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_MSAA | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA) | 0x100005000000000;//0x10000500656501f; // Magic number that might work
-			auto render_axis = [&](bgfx::VertexBufferHandle vbh)
+			auto render_axis = [&](bgfx::VertexBufferHandle vbh, bgfx::TextureHandle th)
 			{
-				bgfx::setTransform(&rotation[0][0]);
+				bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA));
+				bgfx::setTransform(&axes_rotation[0][0]);
 				bgfx::setVertexBuffer(1, vbh);
 				bgfx::setIndexBuffer(axes_ibuffer);
-				bgfx::setTexture(0, axes_uniform, test_texture);
+				bgfx::setTexture(0, axes_uniform, th);
 				bgfx::submit(1, axes_shader);
 			};
 
 			if (!XZ_fore)
-				render_axis(XZ_vbuffer);
+				render_axis(XZ_vbuffer, xz_axes_texture);
 
 			if (!XY_fore)
-				render_axis(XY_vbuffer);
+				render_axis(XY_vbuffer, xy_axes_texture);
 
 			if (!YZ_fore)
-				render_axis(YZ_vbuffer);
+				render_axis(YZ_vbuffer, yz_axes_texture);
 
+			bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA));
 			bgfx::setTransform(&rotation[0][0]);
 			bgfx::setVertexBuffer(1, vertex_buffer);
 			bgfx::setIndexBuffer(index_buffer);
-			bgfx::setTexture(0, axes_uniform, test_texture);
+			bgfx::setTexture(0, axes_uniform, whale_texture);
 			bgfx::submit(1, axes_shader);
 
 			if (YZ_fore)
-				render_axis(YZ_vbuffer);
+				render_axis(YZ_vbuffer, yz_axes_texture);
 
 			if (XY_fore)
-				render_axis(XY_vbuffer);
+				render_axis(XY_vbuffer, xy_axes_texture);
 
 			if (XZ_fore)
-				render_axis(XZ_vbuffer);
+				render_axis(XZ_vbuffer, xz_axes_texture);
 
 			bgfx::touch(1);
 
