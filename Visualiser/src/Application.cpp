@@ -73,12 +73,12 @@ struct PosColTexVertex
 	float v;
 };
 
-static PosColorVertex pointerVertices[] =
+static PosColTexVertex pointerVertices[] =
 {
-	{ 0.0f,  2.0f,  0.0f, 0xff0000ff },
-	{ 0.0f, -1.0f,  1.0f, 0xff00ff00 },
-	{ 0.5f, -1.0f, -1.0f, 0xff00ffff },
-	{-0.5f, -1.0f, -1.0f, 0xffff0000 },
+	{ 0.0f,  2.0f,  0.0f, 0xff0000ff, 0.0f, 0.0f },
+	{ 0.0f, -1.0f,  1.0f, 0xff00ff00, 0.0f, 0.0f },
+	{ 0.5f, -1.0f, -1.0f, 0xff00ffff, 0.0f, 0.0f },
+	{-0.5f, -1.0f, -1.0f, 0xffff0000, 0.0f, 0.0f },
 };
 
 static const uint16_t pointerTriList[] =
@@ -528,8 +528,6 @@ int main(int argc, char** argv)
 		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
 		.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
 		.end();
-	bgfx::VertexBufferHandle vertex_buffer = bgfx::createVertexBuffer(bgfx::makeRef(pointerVertices, sizeof(pointerVertices)), layout);
-	bgfx::IndexBufferHandle index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(pointerTriList, sizeof(pointerTriList)));
 
 	bgfx::VertexLayout pos_tex_layout;
 	pos_tex_layout.begin()
@@ -546,6 +544,9 @@ int main(int argc, char** argv)
 	bgfx::VertexBufferHandle XY_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_XYAxes, sizeof(s_XYAxes)), pos_tex_layout);
 	bgfx::VertexBufferHandle YZ_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_YZAxes, sizeof(s_YZAxes)), pos_tex_layout);
 	bgfx::IndexBufferHandle axes_ibuffer = bgfx::createIndexBuffer(bgfx::makeRef(s_AxesTris, sizeof(s_AxesTris)));
+
+	bgfx::VertexBufferHandle vertex_buffer = bgfx::createVertexBuffer(bgfx::makeRef(pointerVertices, sizeof(pointerVertices)), pos_tex_layout);
+	bgfx::IndexBufferHandle index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(pointerTriList, sizeof(pointerTriList)));
 
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -788,29 +789,38 @@ int main(int argc, char** argv)
 			bool XY_fore = (camera_heading < -1.63/*5707963267948966*/ || camera_heading > 1.5707963267948966)  && !(camera_pitch < -1.4459012060099814 || camera_pitch > 1.4459012060099814);
 
 			//uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_MSAA | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA) | 0x100005000000000;//0x10000500656501f; // Magic number that might work
+			auto render_axis = [&](bgfx::VertexBufferHandle vbh)
+			{
+				bgfx::setTransform(&rotation[0][0]);
+				bgfx::setVertexBuffer(1, vbh);
+				bgfx::setIndexBuffer(axes_ibuffer);
+				bgfx::setTexture(0, axes_uniform, test_texture);
+				bgfx::submit(1, axes_shader);
+			};
 
-			bgfx::setTransform(&rotation[0][0]);
-			bgfx::setVertexBuffer(1, XZ_vbuffer);
-			bgfx::setIndexBuffer(axes_ibuffer);
-			bgfx::setTexture(0, axes_uniform, test_texture);
-			bgfx::submit(1, axes_shader);
+			if (!XZ_fore)
+				render_axis(XZ_vbuffer);
 
-			bgfx::setTransform(&rotation[0][0]);
-			bgfx::setVertexBuffer(1, XY_vbuffer);
-			bgfx::setIndexBuffer(axes_ibuffer);
-			bgfx::setTexture(0, axes_uniform, test_texture);
-			bgfx::submit(1, axes_shader);
+			if (!XY_fore)
+				render_axis(XY_vbuffer);
 
-			bgfx::setTransform(&rotation[0][0]);
-			bgfx::setVertexBuffer(1, YZ_vbuffer);
-			bgfx::setIndexBuffer(axes_ibuffer);
-			bgfx::setTexture(0, axes_uniform, test_texture);
-			bgfx::submit(1, axes_shader);
+			if (!YZ_fore)
+				render_axis(YZ_vbuffer);
 
 			bgfx::setTransform(&rotation[0][0]);
 			bgfx::setVertexBuffer(1, vertex_buffer);
 			bgfx::setIndexBuffer(index_buffer);
-			bgfx::submit(1, shader_program);
+			bgfx::setTexture(0, axes_uniform, test_texture);
+			bgfx::submit(1, axes_shader);
+
+			if (YZ_fore)
+				render_axis(YZ_vbuffer);
+
+			if (XY_fore)
+				render_axis(XY_vbuffer);
+
+			if (XZ_fore)
+				render_axis(XZ_vbuffer);
 
 			bgfx::touch(1);
 

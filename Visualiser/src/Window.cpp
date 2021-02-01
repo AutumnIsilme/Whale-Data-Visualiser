@@ -77,7 +77,7 @@ int Window::Init(u32 width, u32 height, bool resizable)
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, resizable);
 
-	glfw_window = glfwCreateWindow(width, height, "Window", NULL, NULL);
+	glfw_window = glfwCreateWindow(width, height, "Visualiser", NULL, NULL);
 
 	if (glfw_window == NULL)
 	{
