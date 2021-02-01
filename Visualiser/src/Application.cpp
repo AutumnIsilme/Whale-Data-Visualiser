@@ -126,31 +126,6 @@ static PosColTexVertex s_YZAxes[] =
 	{-3.0f,  3.0f, -3.0f,   0xffffffff,   1.0f, 0.0f}
 };
 
-/*
-static PosColorVertex s_XZAxes[] =
-{
-	{-3.0f, -3.0f, -3.0f,   0xff000000},
-	{-3.0f,  3.0f, -3.0f,   0xff0000ff},
-	{ 3.0f,  3.0f, -3.0f,   0xff00ffff},
-	{ 3.0f, -3.0f, -3.0f,   0xffffffff}
-};
-
-static PosColorVertex s_XYAxes[] =
-{
-	{-3.0f,  3.0f, -3.0f,   0xff000000},
-	{-3.0f,  3.0f,  3.0f,   0xff0000ff},
-	{ 3.0f,  3.0f,  3.0f,   0xff00ffff},
-	{ 3.0f,  3.0f, -3.0f,   0xffffffff}
-};
-
-static PosColorVertex s_YZAxes[] =
-{
-	{-3.0f, -3.0f, -3.0f,   0xff000000},
-	{-3.0f, -3.0f,  3.0f,   0xff0000ff},
-	{-3.0f,  3.0f,  3.0f,   0xff00ffff},
-	{-3.0f,  3.0f, -3.0f,   0xffffffff}
-};*/
-
 static const uint16_t s_AxesTris[] =
 {
 	0, 1, 2,
@@ -182,6 +157,8 @@ bgfx::TextureHandle xy_axes_texture;
 bgfx::TextureHandle xz_axes_texture;
 bgfx::TextureHandle yz_axes_texture;
 bgfx::TextureHandle whale_texture;
+
+static std::string filepaths[4] = { "", "", "", "" };
 
 void reset(s32 width, s32 height)
 {
@@ -311,8 +288,6 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 
 	return 0;
 }
-
-static std::string filepaths[4] = { "", "", "", "" };
 
 void LoadDataCache()
 {
@@ -825,6 +800,12 @@ int main(int argc, char** argv)
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 28);
 			ImGui::SliderFloat("", &temporal_index, 0, x_data.size() - 1, "%.0f");
+
+			if (temporal_index < 0)
+				temporal_index = 0;
+			else if (temporal_index >= x_data.size())
+				temporal_index = x_data.size() - 1;
+
 			ImGui::SameLine();
 
 			if (ImGui::ImageButton(IMGUI_TEXTURE_FROM_BGFX(settings_button_texture), ImVec2(13.0f, 13.0f)))
@@ -917,6 +898,58 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("3D Viewport");
 		{
+			auto io = ImGui::GetIO();
+			static u64 left_down_prev = 0;
+			static u64 right_down_prev = 0;
+			static double left_next = .6;
+			static double right_next = .6;
+			if (io.KeysDown[GLFW_KEY_LEFT] && !left_down_prev)
+			{
+				temporal_index -= 20;
+			}
+			if (io.KeysDown[GLFW_KEY_RIGHT] && !right_down_prev)
+			{
+				temporal_index += 20;
+			}
+			if (!io.KeysDown[GLFW_KEY_LEFT] && left_down_prev)
+			{
+				left_next = .6;
+			}
+			if (!io.KeysDown[GLFW_KEY_RIGHT] && right_down_prev)
+			{
+				right_next = .6;
+			}
+			if (io.KeysDownDuration[GLFW_KEY_LEFT] > left_next)
+			{
+				left_next += 0.1;
+				if (left_next > 3)
+					temporal_index -= 30;
+				if (left_next > 8)
+					temporal_index -= 50;
+				if (left_next > 12)
+					temporal_index -= 150;
+				temporal_index -= 20;
+			}
+			if (io.KeysDownDuration[GLFW_KEY_RIGHT] > right_next)
+			{
+				right_next += 0.1;
+				if (right_next > 3)
+					temporal_index += 30;
+				if (left_next > 8)
+					temporal_index += 50;
+				if (left_next > 12)
+					temporal_index += 150;
+				temporal_index += 20;
+			}
+
+			left_down_prev = io.KeysDown[GLFW_KEY_LEFT];
+			right_down_prev = io.KeysDown[GLFW_KEY_RIGHT];
+
+			if (temporal_index < 0)
+				temporal_index = 0;
+			else if (temporal_index >= x_data.size())
+				temporal_index = x_data.size() - 1;
+
 			viewport_viewport = ImGui::GetWindowViewport()->ID;
 			ImVec2 available_space = ImGui::GetContentRegionAvail();
 			frame_width = available_space.x;

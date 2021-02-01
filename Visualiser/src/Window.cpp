@@ -15,19 +15,11 @@
 
 void window_size_callback(GLFWwindow* window, int width, int height)
 {
-	//Application::OnEvent(WindowResizeEvent(width, height));
 	reset(width, height);
 }
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
-	/*switch (action)
-	{
-	case GLFW_PRESS:
-		Application::OnEvent(MouseButtonPressEvent((MouseCode)button, mods));
-	case GLFW_RELEASE:
-		Application::OnEvent(MouseButtonReleaseEvent((MouseCode)button, mods));
-	}*/
 	if (action)
 		on_mouse_button_down_event(button);
 	else
@@ -37,32 +29,35 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 void cursor_pos_callback(GLFWwindow* window, double x, double y)
 {
 	on_mouse_move_event(x, y);
-	//Application::OnEvent(MouseMoveEvent(x, y));
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
-	//Application::OnEvent(MouseScrollEvent(x, y));
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-	/*switch (action)
+	/*if (key == GLFW_KEY_LEFT && action == GLFW_KEY_DOWN && mods == 0)
 	{
-	case GLFW_PRESS:
-		Application::OnEvent(KeyPressEvent((KeyCode)KeycodeFromGLFW[(u16)key], scancode, mods)); break;
-	case GLFW_RELEASE:
-		Application::OnEvent(KeyReleaseEvent((KeyCode)KeycodeFromGLFW[(u16)key], scancode, mods)); break;
-	case GLFW_REPEAT:
-		Application::OnEvent(KeyRepeatEvent((KeyCode)KeycodeFromGLFW[(u16)key], scancode, mods)); break;
-	default:
-		Application::OnEvent(KeyEvent((KeyCode)KeycodeFromGLFW[(u16)key], scancode, mods)); break;
+		on_arrow_key_down_event(0);
+	}
+	if (key == GLFW_KEY_RIGHT && action == GLFW_KEY_DOWN && mods == 0)
+	{
+		on_arrow_key_down_event(1);
+	}
+
+	if (key == GLFW_KEY_LEFT && action == GLFW_KEY_UP && mods == 0)
+	{
+		on_arrow_key_up_event(0);
+	}
+	if (key == GLFW_KEY_RIGHT && action == GLFW_KEY_UP && mods == 0)
+	{
+		on_arrow_key_up_event(1);
 	}*/
 }
 
 void window_close_callback(GLFWwindow* window)
 {
-	//Application::OnEvent(WindowCloseEvent());
 }
 
 int Window::Init(u32 width, u32 height, bool resizable)
