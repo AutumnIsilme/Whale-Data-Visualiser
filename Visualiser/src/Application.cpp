@@ -36,15 +36,6 @@ Window mainWindow;
 u32 WIDTH = 1280;
 u32 HEIGHT = 720;
 
-/*
-What do I want to be able to do?
-
--- Render model in framebuffer with specific rotation
--- Generate graph to texture
--- Display buttons and menu and things
-
-*/
-
 std::vector<float> depth_data;
 std::vector<float> pitch_data;
 std::vector<float> roll_data;
@@ -55,14 +46,6 @@ u8 just_loaded_depth = 0;
 u8 just_loaded_pitch = 0;
 u8 just_loaded_roll  = 0;
 u8 just_loaded_yaw   = 0;
-
-struct PosColorVertex
-{
-	float x;
-	float y;
-	float z;
-	uint32_t abgr;
-};
 
 struct PosColTexVertex
 {
@@ -88,18 +71,6 @@ static const uint16_t pointerTriList[] =
 	0, 3, 1,
 	0, 2, 3,
 	1, 3, 2,
-};
-
-static PosColorVertex s_cubeVertices[] =
-{
-	{-1.0f,  1.0f,  1.0f, 0xff000000 },
-	{ 1.0f,  1.0f,  1.0f, 0xff0000ff },
-	{-1.0f, -1.0f,  1.0f, 0xff00ff00 },
-	{ 1.0f, -1.0f,  1.0f, 0xff00ffff },
-	{-1.0f,  1.0f, -1.0f, 0xffff0000 },
-	{ 1.0f,  1.0f, -1.0f, 0xffff00ff },
-	{-1.0f, -1.0f, -1.0f, 0xffffff00 },
-	{ 1.0f, -1.0f, -1.0f, 0xffffffff },
 };
 
 static PosColTexVertex s_XZAxes[] =
@@ -160,6 +131,7 @@ bgfx::TextureHandle whale_texture;
 
 static std::string filepaths[4] = { "", "", "", "" };
 
+/* Called when the window size changes and at startup to ensure clear colour is set and window size is known */
 void reset(s32 width, s32 height)
 {
 	WIDTH = width;
@@ -173,39 +145,6 @@ void reset(s32 width, s32 height)
 	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
 }
 
-bgfx::ShaderHandle loadDefaultShader(const char* filename)
-{
-	std::string filepath = "assets\\shaders\\";
-	switch (bgfx::getRendererType())
-	{
-	case bgfx::RendererType::Noop:
-	case bgfx::RendererType::Direct3D9: filepath.append("dx9\\"); break;
-	case bgfx::RendererType::Direct3D11:
-	case bgfx::RendererType::Direct3D12: filepath.append("dx11\\"); break;
-	case bgfx::RendererType::Gnm: filepath.append("pssl\\"); break;
-	case bgfx::RendererType::Metal: filepath.append("metal\\"); break;
-	case bgfx::RendererType::OpenGL: filepath.append("glsl\\"); break;
-	case bgfx::RendererType::OpenGLES: filepath.append("essl\\"); break;
-	case bgfx::RendererType::Vulkan: filepath.append("spirv\\"); break;
-	default:
-		break;
-	}
-	filepath.append(filename);
-
-	LOG_INFO("Opening shader at: {}", filepath);
-	FILE* file = fopen(filepath.c_str(), "rb");
-	fseek(file, 0, SEEK_END);
-	u32 filesize = ftell(file);
-	fseek(file, 0, SEEK_SET);
-
-	const bgfx::Memory* mem = bgfx::alloc(filesize + 1);
-	fread(mem->data, 1, filesize, file);
-	mem->data[mem->size - 1] = '\0';
-	fclose(file);
-
-	return bgfx::createShader(mem);
-}
-
 enum class DataType
 {
 	DEPTH = 0,
@@ -216,6 +155,8 @@ enum class DataType
 	COUNT
 };
 
+/* Load data from a file for a passed data type/buffer.
+ * Called by LoadData and LoadDataCache. */
 int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepath)
 {
 	FILE* file = fopen(filepath, "rb");
@@ -229,6 +170,7 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 	u32 filesize = ftell(file);
 	fseek(file, 0, SEEK_SET);
 
+	// Allocate space then read into that space the contents of the file
 	char* mem = (char*)malloc(filesize + 1);
 	defer { free(mem); };
 	fread(mem, 1, filesize, file);
@@ -237,30 +179,39 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 
 	// @TODO: Maybe hold onto the old data to not replace it if the input is bad?
 	data.clear();
+
+	// @TODO: X data compatability check
 	bool do_set_x_data = false;
 	if (x_data.size() == 0)
 		do_set_x_data = true;
-	//depth_x_data.clear();
 
+	// Loop through the data in the file
 	for (u32 index = 0; index < filesize; index++)
 	{
+		// At every iteration, we know we are at the start of a number
 		u32 start = index;
+		// Loop to the end of the number
 		while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
 		{
 			index++;
 		}
+		// There's an unexpected character here, so stop
 		if (mem[index] != '\n')
 		{
 			LOG_ERROR("Malformed data input: Expected number or newline, got {0} at {1}.", mem[index], index);
 			return 2;
 		}
+		// Extract the number that we now know the start and length of, and turn it into a number
 		data.push_back(-std::stof(std::string(&mem[start], index - start)));
+		// If we haven't filled the x_data buffer yet (just a sequence of numbers up to the length of the data), add the next number
 		if (do_set_x_data)
 			x_data.push_back(x_data.size());
+		// This was just testing what it would look like if I graphed the sin of the heading. It didn't work very well, but the code is still here.
 		if (type == DataType::YAW)
 			yaw_sin_data.push_back(glm::sin(-std::stof(std::string(&mem[start], index - start))));
 	}
 
+	// Set flags for which graph to adjust the zoom level of, and log success.
 	switch (type)
 	{
 	case DataType::DEPTH:
@@ -289,6 +240,7 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 	return 0;
 }
 
+/* Load data from a saved cache (currently just a list of filenames so you don't have to open each individually. */
 void LoadDataCache()
 {
 	char* filepath = NULL;
@@ -314,25 +266,31 @@ void LoadDataCache()
 	u32 filesize = ftell(file);
 	fseek(file, 0, SEEK_SET);
 
+	// Allocate space then read into that space the contents of the file
 	char* mem = (char*)malloc(filesize + 1);
 	defer{ free(mem); };
 	fread(mem, 1, filesize, file);
 	mem[filesize] = '\n';
 	fclose(file);
 
+	// Start the loop through the cache file
 	char* head = mem;
-	int done[4] = { 0 };
+	bool done[4] = { 0 };
 	while (head < mem + filesize)
 	{
+		// Save the type of the data (indicated by a number at the start of an entry
 		char type = *head;
 		head += 2;
 		u64 count = 0;
+		// Go to the end of the line
 		while (*head != '\n' && *head != '\r')
 		{
 			head++;
 			count++;
 		}
+		// Extract the file name
 		char* fname = (char*)malloc(count + 1);
+		// Free the allocated memory when we exit the scope
 		defer{ free(fname); };
 		memcpy(fname, head - count, count);
 		fname[count] = 0;
@@ -341,12 +299,14 @@ void LoadDataCache()
 		{
 		case '0':
 		{
+			// If we have already filled out this data from this cache, complain, otherwise actually load the data
 			if (!done[0])
 			{
 				int result = ActuallyLoadData(depth_data, DataType::DEPTH, fname);
+				// If we succeeded in reading the data, save the filepath in case we want to cache it later
 				if (!result)
 					filepaths[0] = std::string(fname);
-				done[0] = 1;
+				done[0] = true;
 			} else
 			{
 				LOG_WARN("Multiple data of the same type (Depth) present at filename {}", fname);
@@ -359,7 +319,7 @@ void LoadDataCache()
 				int result = ActuallyLoadData(pitch_data, DataType::PITCH, fname);
 				if (!result)
 					filepaths[1] = std::string(fname);
-				done[1] = 1;
+				done[1] = true;
 			} else
 			{
 				LOG_WARN("Multiple data of the same type (Pitch) present at filename {}", fname);
@@ -372,7 +332,7 @@ void LoadDataCache()
 				int result = ActuallyLoadData(roll_data, DataType::ROLL, fname);
 				if (!result)
 					filepaths[2] = std::string(fname);
-				done[2] = 1;
+				done[2] = true;
 			} else
 			{
 				LOG_WARN("Multiple data of the same type (Roll) present at filename {}", fname);
@@ -385,7 +345,7 @@ void LoadDataCache()
 				int result = ActuallyLoadData(yaw_data, DataType::YAW, fname);
 				if (!result)
 					filepaths[3] = std::string(fname);
-				done[3] = 1;
+				done[3] = true;
 			} else
 			{
 				LOG_WARN("Multiple data of the same type (Heading) present at filename {}", fname);
@@ -395,6 +355,7 @@ void LoadDataCache()
 			break;
 		}
 
+		// Go forward until we reach the next entry
 		while (*head == '\n' || *head == '\r')
 		{
 			head++;
@@ -403,6 +364,7 @@ void LoadDataCache()
 	LOG_INFO("Loaded data cache from {}", filepath);
 }
 
+/* Save a data cache to disk (Actually just a list of filenames to be loaded at one time later) */
 void SaveDataCache()
 {
 	char* filepath = NULL;
@@ -416,6 +378,7 @@ void SaveDataCache()
 		return;
 	}
 
+	// Open the file in write mode
 	FILE* file = fopen(filepath, "wb");
 	if (file == NULL)
 	{
@@ -427,6 +390,7 @@ void SaveDataCache()
 	{
 		if (filepaths[i].size() != 0)
 		{
+			// Write the data type and path to the file
 			fprintf(file, "%d %s\n", i, filepaths[i].c_str());
 		}
 	}
@@ -436,6 +400,7 @@ void SaveDataCache()
 }
 
 // @TODO: Move this to a worker thread so it doesn't block the main window?
+/* Load a specific data type from a file */
 void LoadData(std::vector<float>& data, DataType type)
 {
 	char* filepath = NULL;
@@ -450,12 +415,14 @@ void LoadData(std::vector<float>& data, DataType type)
 		return;
 	}
 	int result = ActuallyLoadData(data, type, filepath);
+	// If we succeeded, save the filepath in case we want to cache it later
 	if (!result)
 		filepaths[(int)type] = std::string(filepath);
 	free(filepath);
 }
 
-void LoadPlayPauseTextures()
+/* Load in all the required textures */
+void LoadTextures()
 {
 	int width, height, channels;
 	stbi_set_flip_vertically_on_load(1);
@@ -487,6 +454,7 @@ void LoadPlayPauseTextures()
 	whale_texture = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_SAMPLER_UVW_CLAMP, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
 }
 
+/* Create that menu bar at the top of the window */
 bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layout, bool *use_default_layout)
 {
 	if (ImGui::BeginMenuBar())
@@ -573,6 +541,7 @@ static double camera_pitch = 0.0;
 
 static ImGuiID viewport_viewport;
 
+/* When the mouse button is pressed, check if the cursor is inside the 3D viewport, and if so, set the flag to rotate the camera */
 void on_mouse_button_down_event(int button)
 {
 	auto io = ImGui::GetIO();
@@ -588,12 +557,14 @@ void on_mouse_button_down_event(int button)
 	}
 }
 
+/* Stop rotating the camera if the mouse button is released */
 void on_mouse_button_up_event(int button)
 {
 	if (button == 0)
 		changing_orientation = false;
 }
 
+/* Move the camera when the mouse moves, if applicable */
 void on_mouse_move_event(double x, double y)
 {
 	if (changing_orientation)
@@ -602,10 +573,12 @@ void on_mouse_move_event(double x, double y)
 		double dy = y - cursor_y;
 		camera_heading += dx / frame_width * 6.283185307179586;
 		camera_pitch += dy / frame_height * 3.141592653589793;
+		// Keep the camera pitch in the correct range from straight up to straight down.
 		if (camera_pitch > 1.5707963267948966)
 			camera_pitch = 1.5707963267948966;
 		else if (camera_pitch < -1.5707963267948966)
 			camera_pitch = -1.5707963267948966;
+		// Adjust the camera heading value so it remains in the range -pi to pi (Doesn't actually affect the rotation, but keeps the numbers accurate.
 		if (camera_heading > 3.141592653589793)
 			camera_heading -= 6.283185307179586;
 		else if (camera_heading < -3.141592653589793)
@@ -616,6 +589,7 @@ void on_mouse_move_event(double x, double y)
 	cursor_y = y;
 }
 
+/* Program entry point */
 int main(int argc, char** argv)
 {
 	Log::Init();
@@ -628,6 +602,7 @@ int main(int argc, char** argv)
 	}
 	LOG_INFO("Initialised window!");
 
+	// Tell the graphics library about the window and initialisation parameters
 	bgfx::PlatformData platform_data;
 	platform_data.nwh = mainWindow.GetPlatformWindow();
 	bgfx::setPlatformData(platform_data);
@@ -641,44 +616,15 @@ int main(int argc, char** argv)
 
 	LOG_INFO("Renderer: {0} via bgfx", bgfx::getRendererName(bgfx::getRendererType()));
 
-	/*bgfx::VertexLayout layout;
-	layout.begin()
-		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-		.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
-		.end();
-	bgfx::VertexBufferHandle vertex_buffer = bgfx::createVertexBuffer(bgfx::makeRef(cubeVertices, sizeof(cubeVertices)), layout);
-	bgfx::IndexBufferHandle index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(cubeTriList, sizeof(cubeTriList)));
-	*/
-	bgfx::ShaderHandle vertex_shader = loadDefaultShader("vs_cubes.bin");
-	bgfx::ShaderHandle fragment_shader = loadDefaultShader("fs_cubes.bin");
-	bgfx::ProgramHandle shader_program = bgfx::createProgram(vertex_shader, fragment_shader, true);
-
-	bgfx::ShaderHandle axes_vertex_shader = loadDefaultShader("vs_update.bin");
-	bgfx::ShaderHandle axes_fragment_shader = loadDefaultShader("fs_update.bin");
-	bgfx::ProgramHandle axes_shader_program = bgfx::createProgram(axes_vertex_shader, axes_fragment_shader, true);
-
-	/*float* vertices = NULL;
-	int* indices = NULL;
-	int count = 0;
-	LoadStlModel("assets/basic_model.stl", (char**)&vertices, &indices, &count);
-	*/
-	bgfx::VertexLayout layout;
-	layout.begin()
-		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-		.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
-		.end();
-
+	// Set up the layout of the vertices.
 	bgfx::VertexLayout pos_tex_layout;
 	pos_tex_layout.begin()
 		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
 		.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
 		.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
 		.end();
-	bgfx::UniformHandle axes_uniform = bgfx::createUniform("s_tex", bgfx::UniformType::Sampler);
-	bgfx::ProgramHandle axes_shader;
-	bgfx::ShaderHandle vs = bgfx::createShader(bgfx::makeRef(vs_texture(), vs_texture_len()));
-	bgfx::ShaderHandle fs = bgfx::createShader(bgfx::makeRef(fs_texture(), fs_texture_len()));
-	axes_shader = bgfx::createProgram(vs, fs, true);
+
+	// Initialise vertex and index buffers to render the objects
 	bgfx::VertexBufferHandle XZ_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_XZAxes, sizeof(s_XZAxes)), pos_tex_layout);
 	bgfx::VertexBufferHandle XY_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_XYAxes, sizeof(s_XYAxes)), pos_tex_layout);
 	bgfx::VertexBufferHandle YZ_vbuffer = bgfx::createVertexBuffer(bgfx::makeRef(s_YZAxes, sizeof(s_YZAxes)), pos_tex_layout);
@@ -687,6 +633,13 @@ int main(int argc, char** argv)
 	bgfx::VertexBufferHandle vertex_buffer = bgfx::createVertexBuffer(bgfx::makeRef(pointerVertices, sizeof(pointerVertices)), pos_tex_layout);
 	bgfx::IndexBufferHandle index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(pointerTriList, sizeof(pointerTriList)));
 
+	// Initialise the shader program
+	bgfx::UniformHandle texture_uniform = bgfx::createUniform("s_tex", bgfx::UniformType::Sampler);
+	bgfx::ShaderHandle vs = bgfx::createShader(bgfx::makeRef(vs_texture(), vs_texture_len()));
+	bgfx::ShaderHandle fs = bgfx::createShader(bgfx::makeRef(fs_texture(), fs_texture_len()));
+	bgfx::ProgramHandle shader_program = bgfx::createProgram(vs, fs, true);
+
+	// Initialise the GUI library
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
@@ -702,20 +655,17 @@ int main(int argc, char** argv)
 
 	imguiInstallCallbacks();
 
-	/*Window window2;
-	window2.Init(480, 360, false);
-	window2fbh = bgfx::createFrameBuffer(window2.GetPlatformWindow(), 480, 360);
-	bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFF00FFFF, 1.0f, 0);
-	bgfx::setViewRect(1, 0, 0, 480, 360);*/
-
+	// Initialise variables used for the 3D viewport
 	bgfx::FrameBufferHandle model_viewport = BGFX_INVALID_HANDLE;
 	bgfx::TextureHandle texture_handle = BGFX_INVALID_HANDLE;
 	glm::vec2 model_viewport_size_cache = glm::vec2(0.0f, 0.0f);
 
+	// Initialise clear colour and width/height
 	reset(WIDTH, HEIGHT);
 
-	LoadPlayPauseTextures();
+	LoadTextures();
 
+	// Various variables used in the run loop
 	u32 counter = 0;
 	float time, lastTime = 0;
 	float dt;
@@ -733,7 +683,9 @@ int main(int argc, char** argv)
 
 	while (running)
 	{
+		// Clear the screen
 		bgfx::touch(0);
+		// Calculate the change in time since last frame
 		time = (float)glfwGetTime();
 		dt = time - lastTime;
 		lastTime = time;
@@ -744,17 +696,11 @@ int main(int argc, char** argv)
 		}
 		if (WIDTH == 0 || HEIGHT == 0)
 			continue;
+		// Tell the GUI library to process events and start a new frame
 		imguiEvents(dt);
 		ImGui::NewFrame();
-
-		/*
-		bgfx::setTransform(&rotation[0][0]);
-		bgfx::setVertexBuffer(0, vertex_buffer);
-		bgfx::setIndexBuffer(index_buffer);
-		bgfx::submit(1, shader_program);
-		ImGui::ShowDemoWindow();
-		*/
-
+		
+		// Set up the main window to allow sub windows to dock into it
 		static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
 
 		ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
@@ -777,6 +723,7 @@ int main(int argc, char** argv)
 		ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
 		ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
 
+		// We can't load or save a layout in the middle of a frame, so these flags are kept separate and set to complete at the end of the frame
 		bool need_load_layout = false;
 		bool need_save_layout = false;
 		bool use_default_layout = false;
@@ -784,6 +731,7 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("Timeline");
 		{
+			// Play button
 			if (ImGui::ImageButton(IMGUI_TEXTURE_FROM_BGFX(playing ? play_button_texture_play : play_button_texture_pause), ImVec2(13.0f, 13.0f)))
 			{
 				playing = !playing;
@@ -808,11 +756,13 @@ int main(int argc, char** argv)
 
 			ImGui::SameLine();
 
+			// Settings button
 			if (ImGui::ImageButton(IMGUI_TEXTURE_FROM_BGFX(settings_button_texture), ImVec2(13.0f, 13.0f)))
 			{
 				ImGui::OpenPopup("Player Settings");
 			}
 
+			// Show the popup window
 			ImGui::SetNextWindowPos(ImVec2(ImGui::GetMousePos().x, ImGui::GetMousePos().y - 64), ImGuiCond_Appearing);
 			if (ImGui::BeginPopup("Player Settings"))
 			{
@@ -830,6 +780,7 @@ int main(int argc, char** argv)
 			if (ImPlot::BeginPlot("Pitch Data", "Time", "Pitch"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				// Downsample technique borrowed from the ImPlot examples
 				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
 				int start = (int)ImPlot::GetPlotLimits().X.Min;
 				start = start < 0 ? 0 : (start > pitch_data.size() - 1 ? pitch_data.size() - 1 : start);
@@ -841,6 +792,7 @@ int main(int argc, char** argv)
 					size--;
 				}
 				ImPlot::PlotLine("Data", &x_data.data()[start], &pitch_data.data()[start], size, 0, sizeof(float) * downsample);
+				// Show current location in time
 				if (pitch_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &pitch_data[(int)temporal_index], 1);
 				ImPlot::EndPlot();
@@ -854,6 +806,7 @@ int main(int argc, char** argv)
 			if (ImPlot::BeginPlot("Roll Data", "Time", "Roll"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				// Downsample technique borrowed from the ImPlot examples
 				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
 				int start = (int)ImPlot::GetPlotLimits().X.Min;
 				start = start < 0 ? 0 : (start > roll_data.size() - 1 ? roll_data.size() - 1 : start);
@@ -865,6 +818,7 @@ int main(int argc, char** argv)
 					size--;
 				}
 				ImPlot::PlotLine("Data", &x_data.data()[start], &roll_data.data()[start], size, 0, sizeof(float) * downsample);
+				// Show current location in time
 				if (roll_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &roll_data[(int)temporal_index], 1);
 				ImPlot::EndPlot();
@@ -878,6 +832,7 @@ int main(int argc, char** argv)
 			if (ImPlot::BeginPlot("Heading Data", "Time", "Yaw"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				// Downsample technique borrowed from the ImPlot examples
 				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
 				int start = (int)ImPlot::GetPlotLimits().X.Min;
 				start = start < 0 ? 0 : (start > yaw_data.size() - 1 ? yaw_data.size() - 1 : start);
@@ -889,6 +844,7 @@ int main(int argc, char** argv)
 					size--;
 				}
 				ImPlot::PlotLine("Data", &x_data.data()[start], &yaw_data.data()[start], size, 0, sizeof(float) * downsample);
+				// Show current location in time
 				if (yaw_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &yaw_data[(int)temporal_index], 1);
 				ImPlot::EndPlot();
@@ -899,6 +855,8 @@ int main(int argc, char** argv)
 		ImGui::Begin("3D Viewport");
 		{
 			auto io = ImGui::GetIO();
+
+			// Go forward or backward in time if the arrow keys are pressed down
 			static u64 left_down_prev = 0;
 			static u64 right_down_prev = 0;
 			static double left_next = .6;
@@ -922,6 +880,7 @@ int main(int argc, char** argv)
 			if (io.KeysDownDuration[GLFW_KEY_LEFT] > left_next)
 			{
 				left_next += 0.1;
+				// Speed up the longer the key is pressed down
 				if (left_next > 3)
 					temporal_index -= 30;
 				if (left_next > 8)
@@ -933,6 +892,7 @@ int main(int argc, char** argv)
 			if (io.KeysDownDuration[GLFW_KEY_RIGHT] > right_next)
 			{
 				right_next += 0.1;
+				// Speed up the longer the key is pressed down
 				if (right_next > 3)
 					temporal_index += 30;
 				if (left_next > 8)
@@ -950,6 +910,7 @@ int main(int argc, char** argv)
 			else if (temporal_index >= x_data.size())
 				temporal_index = x_data.size() - 1;
 
+			// Save the current viewport ID to detect if the user clicks in the viewport
 			viewport_viewport = ImGui::GetWindowViewport()->ID;
 			ImVec2 available_space = ImGui::GetContentRegionAvail();
 			frame_width = available_space.x;
@@ -957,6 +918,7 @@ int main(int argc, char** argv)
 			ImVec2 loc = ImGui::GetCursorScreenPos();
 			frame_x = loc.x - ImGui::GetWindowViewport()->Pos.x;
 			frame_y = loc.y - ImGui::GetWindowViewport()->Pos.y;
+			// If the available space has changed or the model viewport doesn't exist, recreate it with the new size
 			if (!bgfx::isValid(model_viewport) || available_space.x != model_viewport_size_cache.x || available_space.y != model_viewport_size_cache.y)
 			{
 				model_viewport_size_cache.x = available_space.x;
@@ -972,33 +934,38 @@ int main(int argc, char** argv)
 				bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x3483ebFF);
 				bgfx::setViewRect(1, 0, 0, available_space.x, available_space.y);
 
+				// Set camera projection with the new dimensions
 				projection = glm::perspective(glm::radians(60.0f), float(available_space.x) / float(available_space.y), 0.1f, 100.0f);
 				bgfx::setViewTransform(1, &view[0][0], &projection[0][0]);
 			}
+			// Rotate the whale pointer and the axes according to the current camera position
 			glm::mat4 rotation = glm::mat4(1.0);
 			glm::mat4 axes_rotation = glm::mat4(1.0);
 			rotation *= glm::yawPitchRoll(0.0f, (float)camera_pitch, 0.0f);
 			rotation *= glm::yawPitchRoll(0.0f, 0.0f, (float)camera_heading);
 			axes_rotation *= glm::yawPitchRoll(0.0f, (float)camera_pitch, 0.0f);
 			axes_rotation *= glm::yawPitchRoll(0.0f, 0.0f, (float)camera_heading);
+			// If the data is loaded, rotate the whale pointer to the current orientation
 			if (yaw_data.size() != 0 && pitch_data.size() != 0 && roll_data.size() != 0)
 				rotation *= glm::yawPitchRoll(roll_data[temporal_index], pitch_data[temporal_index], yaw_data[temporal_index]);
 			
-			bool XZ_fore = camera_pitch < 0;// && !(camera_heading < -1.5707963267948966 || camera_heading > 1.5707963267948966) || camera_pitch > 0 && (camera_heading < -1.5707963267948966 || camera_heading > 1.5707963267948966);
+			// Decide if each axis should be rendered in front of or behind the pointer because I couldn't figure out how to make that work by default
+			bool XZ_fore = camera_pitch < 0;
 			bool YZ_fore = camera_heading > 0;
-			bool XY_fore = (camera_heading < -1.63/*5707963267948966*/ || camera_heading > 1.5707963267948966)  && !(camera_pitch < -1.4459012060099814 || camera_pitch > 1.4459012060099814);
+			bool XY_fore = (camera_heading < -1.63 || camera_heading > 1.5707963267948966)  && !(camera_pitch < -1.4459012060099814 || camera_pitch > 1.4459012060099814);
 
-			//uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_MSAA | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA) | 0x100005000000000;//0x10000500656501f; // Magic number that might work
+			// Render axis function
 			auto render_axis = [&](bgfx::VertexBufferHandle vbh, bgfx::TextureHandle th)
 			{
 				bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA));
 				bgfx::setTransform(&axes_rotation[0][0]);
 				bgfx::setVertexBuffer(1, vbh);
 				bgfx::setIndexBuffer(axes_ibuffer);
-				bgfx::setTexture(0, axes_uniform, th);
-				bgfx::submit(1, axes_shader);
+				bgfx::setTexture(0, texture_uniform, th);
+				bgfx::submit(1, shader_program);
 			};
 
+			// Render axes behind
 			if (!XZ_fore)
 				render_axis(XZ_vbuffer, xz_axes_texture);
 
@@ -1008,13 +975,15 @@ int main(int argc, char** argv)
 			if (!YZ_fore)
 				render_axis(YZ_vbuffer, yz_axes_texture);
 
+			// Render pointer
 			bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA));
 			bgfx::setTransform(&rotation[0][0]);
 			bgfx::setVertexBuffer(1, vertex_buffer);
 			bgfx::setIndexBuffer(index_buffer);
-			bgfx::setTexture(0, axes_uniform, whale_texture);
-			bgfx::submit(1, axes_shader);
+			bgfx::setTexture(0, texture_uniform, whale_texture);
+			bgfx::submit(1, shader_program);
 
+			// Render axes in front
 			if (YZ_fore)
 				render_axis(YZ_vbuffer, yz_axes_texture);
 
@@ -1024,8 +993,7 @@ int main(int argc, char** argv)
 			if (XZ_fore)
 				render_axis(XZ_vbuffer, xz_axes_texture);
 
-			bgfx::touch(1);
-
+			// Render the viewport to the screen
 			ImGui::Image(IMGUI_TEXTURE_FROM_BGFX(texture_handle), available_space);
 		}
 		ImGui::End();
@@ -1036,6 +1004,7 @@ int main(int argc, char** argv)
 			if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				// Downsample technique borrowed from the ImPlot examples
 				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
 				int start = (int)ImPlot::GetPlotLimits().X.Min;
 				start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
@@ -1047,6 +1016,7 @@ int main(int argc, char** argv)
 					size--;
 				}
 				ImPlot::PlotLine("Data", &x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
+				// Show current location in time
 				if (depth_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &depth_data[(int)temporal_index], 1);
 				ImPlot::EndPlot();
@@ -1056,6 +1026,7 @@ int main(int argc, char** argv)
 
 		ImGui::End();
 
+		// If the user selected to overwrite the default layout, ask if they are sure they want to do this
 		if (do_overwrite_default_settings_dialog)
 		{
 			ImGui::Begin("Overwrite default layout?", &do_overwrite_default_settings_dialog);
@@ -1076,6 +1047,7 @@ int main(int argc, char** argv)
 			ImGui::End();
 		}
 
+		// Finish the frame for both the GUI library and graphics library
 		ImGui::Render();
 		imguiRender(ImGui::GetDrawData(), 200);
 		ImGui::UpdatePlatformWindows();
@@ -1084,6 +1056,7 @@ int main(int argc, char** argv)
 		bgfx::frame();
 		counter++;
 
+		// Check if the user asked to save or load layouts
 		std::string layout_path = "";
 		if (use_default_layout)
 		{
@@ -1120,9 +1093,12 @@ int main(int argc, char** argv)
 			// We are not allowed to load these while a frame is in progress, so we wait until afer ImGui::Render
 			ImGui::LoadIniSettingsFromDisk(layout_path.c_str());
 		}
-		if (need_save_layout && !do_overwrite_default_settings_dialog)
+		if (need_save_layout && !use_default_layout)
 		{
 			ImGui::SaveIniSettingsToDisk(layout_path.c_str());
+		} else if (need_save_layout && use_default_layout)
+		{
+			do_overwrite_default_settings_dialog = true;
 		}
 		if (do_overwrite_default_settings)
 		{
@@ -1131,6 +1107,7 @@ int main(int argc, char** argv)
 			do_overwrite_default_settings = false;
 		}
 
+		// Decrement just loaded flags
 		if (just_loaded_depth)
 			just_loaded_depth--;
 		if (just_loaded_pitch)
@@ -1142,9 +1119,8 @@ int main(int argc, char** argv)
 	}
 	LOG_INFO("Shutting down.");
 
+	// Shut down the GUI library and graphics library before exiting.
 	imguiShutdown();
-	/*bgfx::destroy(vertex_buffer);
-	bgfx::destroy(index_buffer);*/
 	bgfx::shutdown();
 
 	return 0;
