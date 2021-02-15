@@ -37,6 +37,8 @@ u32 WIDTH = 1280;
 u32 HEIGHT = 720;
 
 std::vector<float> depth_data;
+std::vector<float> depth_velocity_data;
+std::vector<float> depth_acceleration_data;
 std::vector<float> pitch_data;
 std::vector<float> roll_data;
 std::vector<float> yaw_data;
@@ -179,6 +181,11 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 
 	// @TODO: Maybe hold onto the old data to not replace it if the input is bad?
 	data.clear();
+	if (type == DataType::DEPTH)
+	{
+		depth_velocity_data.clear();
+		depth_acceleration_data.clear();
+	}
 
 	// @TODO: X data compatability check
 	bool do_set_x_data = false;
@@ -215,9 +222,45 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 	switch (type)
 	{
 	case DataType::DEPTH:
+	{
+		static int average_width = 250;
+		for (int i = 0; i < data.size(); i++)
+		{
+			if (i > average_width / 2 + (average_width % 2) + 1 && i < data.size() - average_width / 2 + (average_width % 2))
+			{
+				// Calculate velocity
+				float sum = 0;
+				for (int j = i - average_width / 2; j < i + average_width / 2 + (average_width % 2); j++)
+				{
+					sum += data[j] - data[j-1];
+				}
+				depth_velocity_data.push_back(sum / (float) average_width);
+			} else
+			{
+				depth_velocity_data.push_back(0);
+			}
+		}
+		for (int i = 0; i < depth_velocity_data.size(); i++)
+		{
+			if (i > average_width / 2 + (average_width % 2) + 1 && i < depth_velocity_data.size() - average_width / 2 + (average_width % 2))
+			{
+				// Calculate velocity
+				float sum = 0;
+				for (int j = i - average_width / 2; j < i + average_width / 2 + (average_width % 2); j++)
+				{
+					sum += depth_velocity_data[j] - depth_velocity_data[j - 1];
+				}
+				depth_acceleration_data.push_back(sum / (float)average_width);
+			} else
+			{
+				depth_acceleration_data.push_back(0);
+			}
+		}
+		/*if (depth_velocity_data.size() > 2)
+			depth_velocity_data[0] = depth_velocity_data[1];*/
 		LOG_INFO("Loaded depth data from \"{0}\".", filepath);
 		just_loaded_depth = 3;
-		break;
+	} break;
 	case DataType::PITCH:
 		LOG_INFO("Loaded pitch data from \"{0}\".", filepath);
 		just_loaded_pitch = 3;
@@ -998,31 +1041,83 @@ int main(int argc, char** argv)
 		}
 		ImGui::End();
 
-		ImGui::Begin("Depth Graph");
-		{
-			ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
-			if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
-			{
-				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
-				// Downsample technique borrowed from the ImPlot examples
-				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
-				int start = (int)ImPlot::GetPlotLimits().X.Min;
-				start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
-				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
-				end = end < 0 ? 0 : end > depth_data.size() - 1 ? depth_data.size() - 1 : end;
-				int size = (end - start) / downsample;
-				while (size * downsample > depth_data.size())
-				{
-					size--;
-				}
-				ImPlot::PlotLine("Data", &x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
-				// Show current location in time
-				if (depth_data.size() != 0)
-					ImPlot::PlotScatter("Current", &temporal_index, &depth_data[(int)temporal_index], 1);
-				ImPlot::EndPlot();
-			}
-		}
-		ImGui::End();
+        ImGui::Begin("Depth Graph");
+        {
+            ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+            if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
+            {
+                ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+                // Downsample technique borrowed from the ImPlot examples
+                int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+                int start = (int)ImPlot::GetPlotLimits().X.Min;
+                start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
+                int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+                end = end < 0 ? 0 : end > depth_data.size() - 1 ? depth_data.size() - 1 : end;
+                int size = (end - start) / downsample;
+                while (size * downsample > depth_data.size())
+                {
+                    size--;
+                }
+                ImPlot::PlotLine("Data", &x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
+                // Show current location in time
+                if (depth_data.size() != 0)
+                    ImPlot::PlotScatter("Current", &temporal_index, &depth_data[(int)temporal_index], 1);
+                ImPlot::EndPlot();
+            }
+        }
+        ImGui::End();
+
+        ImGui::Begin("Depth Velocity Graph");
+        {
+            ImPlot::SetNextPlotLimits(-200, depth_velocity_data.size() + 200, -0.2, 0.2, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+            if (ImPlot::BeginPlot("Depth Velocity Data", "Time", "Velocity"))
+            {
+                ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+                // Downsample technique borrowed from the ImPlot examples
+                int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+                int start = (int)ImPlot::GetPlotLimits().X.Min;
+                start = start < 0 ? 0 : (start > depth_velocity_data.size() - 1 ? depth_velocity_data.size() - 1 : start);
+                int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+                end = end < 0 ? 0 : end > depth_velocity_data.size() - 1 ? depth_velocity_data.size() - 1 : end;
+                int size = (end - start) / downsample;
+                while (size * downsample > depth_velocity_data.size())
+                {
+                    size--;
+                }
+                ImPlot::PlotLine("Data", &x_data.data()[start], &depth_velocity_data.data()[start], size, 0, sizeof(float) * downsample);
+                // Show current location in time
+                if (depth_velocity_data.size() != 0)
+                    ImPlot::PlotScatter("Current", &temporal_index, &depth_velocity_data[(int)temporal_index], 1);
+                ImPlot::EndPlot();
+            }
+        }
+        ImGui::End();
+
+        ImGui::Begin("Depth Acceleration Graph");
+        {
+            ImPlot::SetNextPlotLimits(-200, depth_acceleration_data.size() + 200, -0.0004, 0.0004, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+            if (ImPlot::BeginPlot("Depth Acceleration Data", "Time", "Acceleration"))
+            {
+                ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+                // Downsample technique borrowed from the ImPlot examples
+                int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+                int start = (int)ImPlot::GetPlotLimits().X.Min;
+                start = start < 0 ? 0 : (start > depth_acceleration_data.size() - 1 ? depth_acceleration_data.size() - 1 : start);
+                int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+                end = end < 0 ? 0 : end > depth_acceleration_data.size() - 1 ? depth_acceleration_data.size() - 1 : end;
+                int size = (end - start) / downsample;
+                while (size * downsample > depth_acceleration_data.size())
+                {
+                    size--;
+                }
+                ImPlot::PlotLine("Data", &x_data.data()[start], &depth_acceleration_data.data()[start], size, 0, sizeof(float) * downsample);
+                // Show current location in time
+                if (depth_acceleration_data.size() != 0)
+                    ImPlot::PlotScatter("Current", &temporal_index, &depth_acceleration_data[(int)temporal_index], 1);
+                ImPlot::EndPlot();
+            }
+        }
+        ImGui::End();
 
 		ImGui::End();
 
