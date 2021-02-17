@@ -50,8 +50,8 @@ std::vector<float> yaw_sin_data;
 std::vector<float> x_data;
 u8 just_loaded_depth = 0;
 u8 just_loaded_pitch = 0;
-u8 just_loaded_roll  = 0;
-u8 just_loaded_yaw   = 0;
+u8 just_loaded_roll = 0;
+u8 just_loaded_yaw = 0;
 
 struct PosColTexVertex
 {
@@ -135,7 +135,10 @@ bgfx::TextureHandle xz_axes_texture;
 bgfx::TextureHandle yz_axes_texture;
 bgfx::TextureHandle whale_texture;
 
-static std::string filepaths[4] = { "", "", "", "" };
+std::string filepaths[4] = { "", "", "", "" };
+bool single_cache = false;
+
+float mark_0 = 0, mark_1 = 0;
 
 /* Called when the window size changes and at startup to ensure clear colour is set and window size is known */
 void reset(s32 width, s32 height)
@@ -179,7 +182,7 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 
 	// Allocate space then read into that space the contents of the file
 	char* mem = (char*)malloc(filesize + 1);
-	defer { free(mem); };
+	defer{ free(mem); };
 	fread(mem, 1, filesize, file);
 	mem[filesize] = '\n';
 	fclose(file);
@@ -193,6 +196,8 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 		depth_velocity_differences.clear();
 		depth_acceleration_data.clear();
 	}
+	if (type == DataType::YAW)
+		yaw_sin_data.clear();
 
 	// @TODO: X data compatability check
 	bool do_set_x_data = false;
@@ -213,6 +218,19 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 		if (mem[index] != '\n')
 		{
 			LOG_ERROR("Malformed data input: Expected number or newline, got {0} at {1}.", mem[index], index);
+			// @TODO: Maybe save the old data and restore if something breaks?
+			data.clear();
+			if (type == DataType::DEPTH)
+			{
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+			}
+			if (type == DataType::YAW)
+				yaw_sin_data.clear();
+			if (do_set_x_data)
+				x_data.clear();
 			return 2;
 		}
 		// Extract the number that we now know the start and length of, and turn it into a number
@@ -356,6 +374,16 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 	return 0;
 }
 
+int expect(char** data, char e)
+{
+	if (**data != e)
+	{
+		return 1;
+	}
+	(*data)++;
+	return 0;
+}
+
 /* Load data from a saved cache (currently just a list of filenames so you don't have to open each individually. */
 void LoadDataCache(double* x_max)
 {
@@ -389,135 +417,315 @@ void LoadDataCache(double* x_max)
 	mem[filesize] = '\n';
 	fclose(file);
 
-	// Start the loop through the cache file
 	char* head = mem;
-	bool done[4] = { 0 };
-	while (head < mem + filesize)
+	// We expect a directive "@type {}" at the top of the file
+	if (expect(&head, '@') || expect(&head, 't') || expect(&head, 'y') || expect(&head, 'p') || expect(&head, 'e') || expect(&head, ' '))
 	{
-		// Save the type of the data (indicated by a number at the start of an entry
-		char type = *head;
-		head += 2;
-		u64 count = 0;
-		// Go to the end of the line
-		while (*head != '\n' && *head != '\r')
-		{
-			head++;
-			count++;
-		}
-		// Extract the file name
-		char* fname = (char*)malloc(count + 1);
-		// Free the allocated memory when we exit the scope
-		defer{ free(fname); };
-		memcpy(fname, head - count, count);
-		fname[count] = 0;
+		if (*mem != '@') goto default_load;
+		while (*head != ' ' && head - mem < 15) head++;
+		LOG_ERROR("Malformed data input: Unrecognised header tag ({})", std::string(mem, head - mem));
+		return;
+	}
 
-		switch (type)
+	switch (expect(&head, 'c'))
+	{
+	case 1:
+	{
+		if (expect(&head, 's') || expect(&head, 'e') || expect(&head, 'c') || expect(&head, 't') || expect(&head, 'i') || expect(&head, 'o') || expect(&head, 'n'))
 		{
-		case '0':
+			while (*head != '\n' && head - mem < 15) head++;
+			LOG_ERROR("Malformed data input: Unrecognised header type ({})", std::string(mem, head - mem));
+			return;
+		}
+		if (expect(&head, '\n'))
 		{
-			// If we have already filled out this data from this cache, complain, otherwise actually load the data
-			if (!done[0])
-			{
-				int result = ActuallyLoadData(depth_data, DataType::DEPTH, fname, x_max);
-				// If we succeeded in reading the data, save the filepath in case we want to cache it later
-				if (!result)
-					filepaths[0] = std::string(fname);
-				done[0] = true;
-			} else
-			{
-				LOG_WARN("Multiple data of the same type (Depth) present at filename {}", fname);
-			}
-		} break;
-		case '1':
-		{
-			if (!done[1])
-			{
-				int result = ActuallyLoadData(pitch_data, DataType::PITCH, fname, x_max);
-				if (!result)
-					filepaths[1] = std::string(fname);
-				done[1] = true;
-			} else
-			{
-				LOG_WARN("Multiple data of the same type (Pitch) present at filename {}", fname);
-			}
-		} break;
-		case '2':
-		{
-			if (!done[2])
-			{
-				int result = ActuallyLoadData(roll_data, DataType::ROLL, fname, x_max);
-				if (!result)
-					filepaths[2] = std::string(fname);
-				done[2] = true;
-			} else
-			{
-				LOG_WARN("Multiple data of the same type (Roll) present at filename {}", fname);
-			}
-		} break;
-		case '3':
-		{
-			if (!done[3])
-			{
-				int result = ActuallyLoadData(yaw_data, DataType::YAW, fname, x_max);
-				if (!result)
-					filepaths[3] = std::string(fname);
-				done[3] = true;
-			} else
-			{
-				LOG_WARN("Multiple data of the same type (Heading) present at filename {}", fname);
-			}
-		} break;
-		default:
-			break;
+			LOG_ERROR("Malformed data input: Expected newline, got {}", *head);
+			return;
 		}
 
-		// Go forward until we reach the next entry
-		while (*head == '\n' || *head == '\r')
+		depth_data.clear();
+		depth_differences.clear();
+		depth_velocity_data.clear();
+		depth_velocity_differences.clear();
+		depth_acceleration_data.clear();
+
+		pitch_data.clear();
+		roll_data.clear();
+		yaw_data.clear();
+
+		x_data.clear();
+
+		just_loaded_depth = true;
+		just_loaded_pitch = true;
+		just_loaded_roll = true;
+		just_loaded_yaw = true;
+		single_cache = true;
+		mark_0 = 0;
+		mark_1 = 0;
+
+		// Loop through the data in the file
+		for (u32 index = head - mem; index < filesize; index++)
 		{
-			head++;
+			// At every iteration, we know we are at the start of a number
+			u32 start = index;
+			// Loop to the end of the number
+			while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
+			{
+				index++;
+				head++;
+			}
+			// Extract the number that we now know the start and length of, and turn it into a number
+			depth_data.push_back(std::stof(std::string(&mem[start], index - start)));
+
+			if (expect(&head, ',') || expect(&head, ' '))
+			{
+				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				// @TODO: Maybe save the old data and restore if something breaks?
+				depth_data.clear();
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+				return;
+			}
+			index += 2;
+
+			// At every iteration, we know we are at the start of a number
+			start = index;
+			// Loop to the end of the number
+			while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
+			{
+				index++;
+				head++;
+			}
+			// Extract the number that we now know the start and length of, and turn it into a number
+			depth_velocity_data.push_back(std::stof(std::string(&mem[start], index - start)));
+
+			if (expect(&head, ',') || expect(&head, ' '))
+			{
+				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				depth_data.clear();
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+				return;
+			}
+			index += 2;
+
+			// At every iteration, we know we are at the start of a number
+			start = index;
+			// Loop to the end of the number
+			while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
+			{
+				index++;
+				head++;
+			}
+			// Extract the number that we now know the start and length of, and turn it into a number
+			depth_acceleration_data.push_back(std::stof(std::string(&mem[start], index - start)));
+
+			if (expect(&head, ',') || expect(&head, ' '))
+			{
+				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				depth_data.clear();
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+				return;
+			}
+			index += 2;
+
+			// At every iteration, we know we are at the start of a number
+			start = index;
+			// Loop to the end of the number
+			while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
+			{
+				index++;
+				head++;
+			}
+			// Extract the number that we now know the start and length of, and turn it into a number
+			pitch_data.push_back(std::stof(std::string(&mem[start], index - start)));
+
+			if (expect(&head, ',') || expect(&head, ' '))
+			{
+				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				depth_data.clear();
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+				return;
+			}
+			index += 2;
+
+			// At every iteration, we know we are at the start of a number
+			start = index;
+			// Loop to the end of the number
+			while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
+			{
+				index++;
+				head++;
+			}
+			// Extract the number that we now know the start and length of, and turn it into a number
+			roll_data.push_back(std::stof(std::string(&mem[start], index - start)));
+
+			if (expect(&head, ',') || expect(&head, ' '))
+			{
+				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				depth_data.clear();
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+				return;
+			}
+			index += 2;
+
+			// At every iteration, we know we are at the start of a number
+			start = index;
+			// Loop to the end of the number
+			while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e')
+			{
+				index++;
+				head++;
+			}
+			// Extract the number that we now know the start and length of, and turn it into a number
+			yaw_data.push_back(std::stof(std::string(&mem[start], index - start)));
+			
+			// This was just testing what it would look like if I graphed the sin of the heading. It didn't work very well, but the code is still here.
+			yaw_sin_data.push_back(glm::sin(std::stof(std::string(&mem[start], index - start))));
+
+			// If we haven't filled the x_data buffer yet (just a sequence of numbers up to the length of the data), add the next number
+			x_data.push_back(x_data.size());
+
+			if (expect(&head, '\n'))
+			{
+				LOG_ERROR("Malformed data input: Expected newline, got {0} at {1}.", mem[index], index);
+				depth_data.clear();
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+				return;
+			}
 		}
+	} break;
+	case 0:
+	{
+		if (expect(&head, 'a') || expect(&head, 'c') || expect(&head, 'h') || expect(&head, 'e'))
+		{
+			while (*head != '\n' && head - mem < 15) head++;
+			LOG_ERROR("Malformed data input: Unrecognised header type ({})", std::string(mem, head - mem));
+			return;
+		}
+
+	default_load:
+		x_data.clear();
+
+		just_loaded_depth = true;
+		just_loaded_pitch = true;
+		just_loaded_roll = true;
+		just_loaded_yaw = true;
+		single_cache = false;
+		mark_0 = 0;
+		mark_1 = 0;
+
+		// Start the loop through the cache file
+		bool done[4] = { 0 };
+		while (head < mem + filesize)
+		{
+			// Save the type of the data (indicated by a number at the start of an entry
+			char type = *head;
+			head += 2;
+			u64 count = 0;
+			// Go to the end of the line
+			while (*head != '\n' && *head != '\r')
+			{
+				head++;
+				count++;
+			}
+			// Extract the file name
+			char* fname = (char*)malloc(count + 1);
+			// Free the allocated memory when we exit the scope
+			defer{ free(fname); };
+			memcpy(fname, head - count, count);
+			fname[count] = 0;
+
+			switch (type)
+			{
+			case '0':
+			{
+				// If we have already filled out this data from this cache, complain, otherwise actually load the data
+				if (!done[0])
+				{
+					int result = ActuallyLoadData(depth_data, DataType::DEPTH, fname, x_max);
+					// If we succeeded in reading the data, save the filepath in case we want to cache it later
+					if (!result)
+						filepaths[0] = std::string(fname);
+					done[0] = true;
+				} else
+				{
+					LOG_WARN("Multiple data of the same type (Depth) present at filename {}", fname);
+				}
+			} break;
+			case '1':
+			{
+				if (!done[1])
+				{
+					int result = ActuallyLoadData(pitch_data, DataType::PITCH, fname, x_max);
+					if (!result)
+						filepaths[1] = std::string(fname);
+					done[1] = true;
+				} else
+				{
+					LOG_WARN("Multiple data of the same type (Pitch) present at filename {}", fname);
+				}
+			} break;
+			case '2':
+			{
+				if (!done[2])
+				{
+					int result = ActuallyLoadData(roll_data, DataType::ROLL, fname, x_max);
+					if (!result)
+						filepaths[2] = std::string(fname);
+					done[2] = true;
+				} else
+				{
+					LOG_WARN("Multiple data of the same type (Roll) present at filename {}", fname);
+				}
+			} break;
+			case '3':
+			{
+				if (!done[3])
+				{
+					int result = ActuallyLoadData(yaw_data, DataType::YAW, fname, x_max);
+					if (!result)
+						filepaths[3] = std::string(fname);
+					done[3] = true;
+				} else
+				{
+					LOG_WARN("Multiple data of the same type (Heading) present at filename {}", fname);
+				}
+			} break;
+			default:
+				break;
+			}
+
+			// Go forward until we reach the next entry
+			while (*head == '\n' || *head == '\r')
+			{
+				head++;
+			}
+		}
+	} break;
 	}
 	LOG_INFO("Loaded data cache from {}", filepath);
 }
 
-/* Save a data cache to disk (Actually just a list of filenames to be loaded at one time later) */
-void SaveDataCache()
-{
-	char* filepath = NULL;
-	nfdresult_t open_result = NFD_SaveDialog(NULL, NULL, &filepath);
-	if (open_result == NFD_CANCEL)
-	{
-		return;
-	} else if (open_result == NFD_ERROR)
-	{
-		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
-		return;
-	}
-
-	// Open the file in write mode
-	FILE* file = fopen(filepath, "wb");
-	if (file == NULL)
-	{
-		LOG_ERROR("Failed to open file \"{0}\".", filepath);
-		return;
-	}
-
-	for (int i = 0; i < 4; i++)
-	{
-		if (filepaths[i].size() != 0)
-		{
-			// Write the data type and path to the file
-			fprintf(file, "%d %s\n", i, filepaths[i].c_str());
-		}
-	}
-	fclose(file);
-	LOG_INFO("Saved data cache to {}", filepath);
-	free(filepath);
-}
-
 void ExportDataSection(double x_min, double x_max)
 {
-	if (depth_data.size() < x_max || pitch_data.size() < x_max || yaw_data.size() < x_max || roll_data.size() < x_max || x_min < 0 || x_min > x_max)
+	if (depth_data.size() < x_max || pitch_data.size() < x_max || yaw_data.size() < x_max || roll_data.size() < x_max || x_min < 0 || x_min >= x_max)
 	{
 		LOG_ERROR("Bounds check failed on export attempt");
 		return;
@@ -541,11 +749,55 @@ void ExportDataSection(double x_min, double x_max)
 		return;
 	}
 
+	fprintf(file, "@type section\n");
+
 	u64 x1 = x_min;
 	u64 x2 = x_max;
 	for (u64 i = x1; i < x2; i++)
 	{
-		fprintf(file, "%f, %f, %f, %f\n", depth_data[i], pitch_data[i], roll_data[i], yaw_data[i]);
+		fprintf(file, "%f, %f, %f, %f, %f, %f\n", depth_data[i], depth_velocity_data[i], depth_acceleration_data[i], pitch_data[i], roll_data[i], yaw_data[i]);
+	}
+	fclose(file);
+	LOG_INFO("Exported data section to {}", filepath);
+	free(filepath);
+}
+
+/* Save a data cache to disk (Actually just a list of filenames to be loaded at one time later) */
+void SaveDataCache()
+{
+	if (single_cache)
+	{
+		ExportDataSection(0, x_data.size());
+		return;
+	}
+	char* filepath = NULL;
+	nfdresult_t open_result = NFD_SaveDialog(NULL, NULL, &filepath);
+	if (open_result == NFD_CANCEL)
+	{
+		return;
+	} else if (open_result == NFD_ERROR)
+	{
+		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
+		return;
+	}
+
+	// Open the file in write mode
+	FILE* file = fopen(filepath, "wb");
+	if (file == NULL)
+	{
+		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		return;
+	}
+
+	fprintf(file, "@type cache\n");
+
+	for (int i = 0; i < 4; i++)
+	{
+		if (filepaths[i].size() != 0)
+		{
+			// Write the data type and path to the file
+			fprintf(file, "%d %s\n", i, filepaths[i].c_str());
+		}
 	}
 	fclose(file);
 	LOG_INFO("Saved data cache to {}", filepath);
@@ -561,8 +813,7 @@ void LoadData(std::vector<float>& data, DataType type, double* x_max)
 	if (open_result == NFD_CANCEL)
 	{
 		return;
-	}
-	else if (open_result == NFD_ERROR)
+	} else if (open_result == NFD_ERROR)
 	{
 		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
 		return;
@@ -579,7 +830,7 @@ void LoadTextures()
 {
 	int width, height, channels;
 	stbi_set_flip_vertically_on_load(1);
-	stbi_uc *data = stbi_load("assets/play.png", &width, &height, &channels, 0);
+	stbi_uc* data = stbi_load("assets/play.png", &width, &height, &channels, 0);
 	play_button_texture_play = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, bgfx::makeRef((void*)data, width * height * channels, [](void* data, void*) { stbi_image_free(data); }));
 
 	stbi_set_flip_vertically_on_load(1);
@@ -652,7 +903,7 @@ bool create_menu_bar(bool running, bool* need_load_layout, bool* need_save_layou
 				}
 				if (ImGui::MenuItem("Export Data Section"))
 				{
-					ExportDataSection(*x_min, *x_max);
+					ExportDataSection(mark_0, mark_1);
 				}
 				ImGui::EndMenu();
 			}
@@ -840,7 +1091,6 @@ int main(int argc, char** argv)
 	float temporal_index = 0;
 	float flow_rate = 1.0f;
 	double graph_x_min = 0, graph_x_max = 0;
-	float mark_0 = 0, mark_1 = 0;
 	float x1[2] = { 0, 0 };
 	float x2[2] = { 0, 0 };
 	const float ys[2] = { -100000000000000, 100000000000000 };
@@ -866,7 +1116,7 @@ int main(int argc, char** argv)
 		// Tell the GUI library to process events and start a new frame
 		imguiEvents(dt);
 		ImGui::NewFrame();
-		
+
 		// Set up the main window to allow sub windows to dock into it
 		static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
 
@@ -1149,11 +1399,11 @@ int main(int argc, char** argv)
 			// If the data is loaded, rotate the whale pointer to the current orientation
 			if (yaw_data.size() != 0 && pitch_data.size() != 0 && roll_data.size() != 0)
 				rotation *= glm::yawPitchRoll(roll_data[temporal_index], pitch_data[temporal_index], yaw_data[temporal_index]);
-			
+
 			// Decide if each axis should be rendered in front of or behind the pointer because I couldn't figure out how to make that work by default
 			bool XZ_fore = camera_pitch < 0;
 			bool YZ_fore = camera_heading > 0;
-			bool XY_fore = (camera_heading < -1.63 || camera_heading > 1.5707963267948966)  && !(camera_pitch < -1.4459012060099814 || camera_pitch > 1.4459012060099814);
+			bool XY_fore = (camera_heading < -1.63 || camera_heading > 1.5707963267948966) && !(camera_pitch < -1.4459012060099814 || camera_pitch > 1.4459012060099814);
 
 			// Render axis function
 			auto render_axis = [&](bgfx::VertexBufferHandle vbh, bgfx::TextureHandle th)
@@ -1199,94 +1449,94 @@ int main(int argc, char** argv)
 		}
 		ImGui::End();
 
-        ImGui::Begin("Depth Graph");
-        {
+		ImGui::Begin("Depth Graph");
+		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-            ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
-            if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
-            {
-                ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
-                // Downsample technique borrowed from the ImPlot examples
-                int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
-                int start = (int)ImPlot::GetPlotLimits().X.Min;
-                start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
-                int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
-                end = end < 0 ? 0 : end > depth_data.size() - 1 ? depth_data.size() - 1 : end;
-                int size = (end - start) / downsample;
-                while (size * downsample > depth_data.size())
-                {
-                    size--;
-                }
-                ImPlot::PlotLine("Data", &x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
-                // Show current location in time
-                if (depth_data.size() != 0)
-                    ImPlot::PlotScatter("Current", &temporal_index, &depth_data[(int)temporal_index], 1);
-				
-				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
-				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
-				
-                ImPlot::EndPlot();
-            }
-        }
-        ImGui::End();
+			ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
+			{
+				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				// Downsample technique borrowed from the ImPlot examples
+				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+				int start = (int)ImPlot::GetPlotLimits().X.Min;
+				start = start < 0 ? 0 : (start > depth_data.size() - 1 ? depth_data.size() - 1 : start);
+				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+				end = end < 0 ? 0 : end > depth_data.size() - 1 ? depth_data.size() - 1 : end;
+				int size = (end - start) / downsample;
+				while (size * downsample > depth_data.size())
+				{
+					size--;
+				}
+				ImPlot::PlotLine("Data", &x_data.data()[start], &depth_data.data()[start], size, 0, sizeof(float) * downsample);
+				// Show current location in time
+				if (depth_data.size() != 0)
+					ImPlot::PlotScatter("Current", &temporal_index, &depth_data[(int)temporal_index], 1);
 
-        ImGui::Begin("Depth Velocity Graph");
-        {
-			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-            ImPlot::SetNextPlotLimits(-200, depth_velocity_data.size() + 200, -0.2, 0.2, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
-            if (ImPlot::BeginPlot("Depth Velocity Data", "Time", "Velocity"))
-            {
-                ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
-                // Downsample technique borrowed from the ImPlot examples
-                int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
-                int start = (int)ImPlot::GetPlotLimits().X.Min;
-                start = start < 0 ? 0 : (start > depth_velocity_data.size() - 1 ? depth_velocity_data.size() - 1 : start);
-                int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
-                end = end < 0 ? 0 : end > depth_velocity_data.size() - 1 ? depth_velocity_data.size() - 1 : end;
-                int size = (end - start) / downsample;
-                while (size * downsample > depth_velocity_data.size())
-                {
-                    size--;
-                }
-                ImPlot::PlotLine("Data", &x_data.data()[start], &depth_velocity_data.data()[start], size, 0, sizeof(float) * downsample);
-                // Show current location in time
-                if (depth_velocity_data.size() != 0)
-                    ImPlot::PlotScatter("Current", &temporal_index, &depth_velocity_data[(int)temporal_index], 1);
 				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
 				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
-                ImPlot::EndPlot();
-            }
-        }
-        ImGui::End();
 
-        ImGui::Begin("Depth Acceleration Graph");
-        {
+				ImPlot::EndPlot();
+			}
+		}
+		ImGui::End();
+
+		ImGui::Begin("Depth Velocity Graph");
+		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-            ImPlot::SetNextPlotLimits(-200, depth_acceleration_data.size() + 200, -0.0004, 0.0004, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
-            if (ImPlot::BeginPlot("Depth Acceleration Data", "Time", "Acceleration"))
-            {
-                ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
-                // Downsample technique borrowed from the ImPlot examples
-                int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
-                int start = (int)ImPlot::GetPlotLimits().X.Min;
-                start = start < 0 ? 0 : (start > depth_acceleration_data.size() - 1 ? depth_acceleration_data.size() - 1 : start);
-                int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
-                end = end < 0 ? 0 : end > depth_acceleration_data.size() - 1 ? depth_acceleration_data.size() - 1 : end;
-                int size = (end - start) / downsample;
-                while (size * downsample > depth_acceleration_data.size())
-                {
-                    size--;
-                }
-                ImPlot::PlotLine("Data", &x_data.data()[start], &depth_acceleration_data.data()[start], size, 0, sizeof(float) * downsample);
-                // Show current location in time
-                if (depth_acceleration_data.size() != 0)
-                    ImPlot::PlotScatter("Current", &temporal_index, &depth_acceleration_data[(int)temporal_index], 1);
+			ImPlot::SetNextPlotLimits(-200, depth_velocity_data.size() + 200, -0.2, 0.2, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			if (ImPlot::BeginPlot("Depth Velocity Data", "Time", "Velocity"))
+			{
+				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				// Downsample technique borrowed from the ImPlot examples
+				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+				int start = (int)ImPlot::GetPlotLimits().X.Min;
+				start = start < 0 ? 0 : (start > depth_velocity_data.size() - 1 ? depth_velocity_data.size() - 1 : start);
+				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+				end = end < 0 ? 0 : end > depth_velocity_data.size() - 1 ? depth_velocity_data.size() - 1 : end;
+				int size = (end - start) / downsample;
+				while (size * downsample > depth_velocity_data.size())
+				{
+					size--;
+				}
+				ImPlot::PlotLine("Data", &x_data.data()[start], &depth_velocity_data.data()[start], size, 0, sizeof(float) * downsample);
+				// Show current location in time
+				if (depth_velocity_data.size() != 0)
+					ImPlot::PlotScatter("Current", &temporal_index, &depth_velocity_data[(int)temporal_index], 1);
 				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
 				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
-                ImPlot::EndPlot();
-            }
-        }
-        ImGui::End();
+				ImPlot::EndPlot();
+			}
+		}
+		ImGui::End();
+
+		ImGui::Begin("Depth Acceleration Graph");
+		{
+			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
+			ImPlot::SetNextPlotLimits(-200, depth_acceleration_data.size() + 200, -0.0004, 0.0004, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			if (ImPlot::BeginPlot("Depth Acceleration Data", "Time", "Acceleration"))
+			{
+				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
+				// Downsample technique borrowed from the ImPlot examples
+				int downsample = (int)ImPlot::GetPlotLimits().X.Size() / 1000 + 1;
+				int start = (int)ImPlot::GetPlotLimits().X.Min;
+				start = start < 0 ? 0 : (start > depth_acceleration_data.size() - 1 ? depth_acceleration_data.size() - 1 : start);
+				int end = (int)ImPlot::GetPlotLimits().X.Max + 1000;
+				end = end < 0 ? 0 : end > depth_acceleration_data.size() - 1 ? depth_acceleration_data.size() - 1 : end;
+				int size = (end - start) / downsample;
+				while (size * downsample > depth_acceleration_data.size())
+				{
+					size--;
+				}
+				ImPlot::PlotLine("Data", &x_data.data()[start], &depth_acceleration_data.data()[start], size, 0, sizeof(float) * downsample);
+				// Show current location in time
+				if (depth_acceleration_data.size() != 0)
+					ImPlot::PlotScatter("Current", &temporal_index, &depth_acceleration_data[(int)temporal_index], 1);
+				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
+				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
+				ImPlot::EndPlot();
+			}
+		}
+		ImGui::End();
 
 		ImGui::End();
 
@@ -1325,8 +1575,7 @@ int main(int argc, char** argv)
 		if (use_default_layout)
 		{
 			layout_path = "assets/default_layout.ini";
-		}
-		else if (need_load_layout || need_save_layout)
+		} else if (need_load_layout || need_save_layout)
 		{
 			char* filepath = NULL;
 			nfdresult_t open_result;
@@ -1337,13 +1586,11 @@ int main(int argc, char** argv)
 			if (open_result == NFD_CANCEL)
 			{
 				need_load_layout = need_save_layout = false;
-			}
-			else if (open_result == NFD_ERROR)
+			} else if (open_result == NFD_ERROR)
 			{
 				need_load_layout = need_save_layout = false;
 				LOG_ERROR("Open dialog failed: {}", NFD_GetError());
-			}
-			else
+			} else
 			{
 				layout_path = std::string(filepath);
 				if (need_save_layout && layout_path.substr(layout_path.size() - 26, 26) == std::string("\\assets\\default_layout.ini"))
