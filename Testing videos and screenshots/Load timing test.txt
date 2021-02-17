@@ -1,0 +1,92 @@
+I initially used a very simple algorithm to calculate the average rate of change for depth.
+This just looped over the average width of entries around the one in question. This was rather slow,
+taking about 0.12 seconds for each derivative, and pushing the total load time up by nearly a quarter
+of a second. The corresponding log file can be seen below, with the important lines bracketed:
+
+[19:47:17] [info] Visualiser: Initialised window!
+[19:47:17] [info] Visualiser: Renderer: Direct3D 11 via bgfx
+[19:47:17] [info] Visualiser: Recreating framebuffer: 1264.0, 329.0.
+[19:47:17] [info] Visualiser: Recreating framebuffer: 866.0, 329.0.
+-------------------------------------------------------------------------
+[19:50:32] [info] Visualiser: First derivative: 0.120087296
+[19:50:32] [info] Visualiser: Second derivative: 0.122966016
+[19:50:32] [info] Visualiser: Loaded depth data from "X:\Data visualiser\Visualiser\assets\data\depth.csv".
+[19:50:32] [info] Visualiser: Data load time: 0.368510208
+-------------------------------------------------------------------------
+[19:47:22] [info] Visualiser: Loaded pitch data from "X:\Data visualiser\Visualiser\assets\data\pitch.csv".
+[19:47:22] [info] Visualiser: Data load time: 0.118851584
+[19:47:22] [info] Visualiser: Loaded roll data from "X:\Data visualiser\Visualiser\assets\data\roll.csv".
+[19:47:22] [info] Visualiser: Data load time: 0.117764096
+[19:47:22] [info] Visualiser: Loaded heading data from "X:\Data visualiser\Visualiser\assets\data\head.csv".
+[19:47:22] [info] Visualiser: Data load time: 0.224573696
+[19:47:22] [info] Visualiser: Loaded data cache from X:\Data visualiser\Visualiser\assets\data\cache_test_2.ca
+[19:47:23] [info] Visualiser: Shutting down.
+
+The code for this is also included:
+
+for (int i = 0; i < data.size(); i++)
+{
+    if (i > average_width / 2 + (average_width % 2) + 1 && i < data.size() - average_width / 2 + (average_width % 2))
+    {
+        // Calculate velocity
+        float sum = 0;
+        for (int j = i - average_width / 2; j < i + average_width / 2 + (average_width % 2); j++)
+        {
+            sum += depth_differences[j];
+        }
+        depth_velocity_data.push_back(sum / (float) average_width);
+    } else
+    {
+        depth_velocity_data.push_back(0);
+    }
+}
+
+This speed is far slower than I would like, so I decided to optimise the algorithm. This
+produced a result where the calculation produced the same result, but in less than one 20th
+of the time it took previously (0.006 seconds vs 0.12 seconds).
+
+[19:55:12] [info] Visualiser: Initialised window!
+[19:55:12] [info] Visualiser: Renderer: Direct3D 11 via bgfx
+[19:55:12] [info] Visualiser: Recreating framebuffer: 1264.0, 329.0.
+[19:55:12] [info] Visualiser: Recreating framebuffer: 866.0, 329.0.
+-------------------------------------------------------------------------
+[19:55:16] [info] Visualiser: Time elapsed: 0.006209024
+[19:55:16] [info] Visualiser: Time elapsed 2: 0.004428032
+[19:55:16] [info] Visualiser: Loaded depth data from "X:\Data visualiser\Visualiser\assets\data\depth.csv".
+[19:55:16] [info] Visualiser: Data load time: 0.129849344
+-------------------------------------------------------------------------
+[19:55:16] [info] Visualiser: Loaded pitch data from "X:\Data visualiser\Visualiser\assets\data\pitch.csv".
+[19:55:16] [info] Visualiser: Data load time: 0.117336832
+[19:55:16] [info] Visualiser: Loaded roll data from "X:\Data visualiser\Visualiser\assets\data\roll.csv".
+[19:55:16] [info] Visualiser: Data load time: 0.11829376
+[19:55:17] [info] Visualiser: Loaded heading data from "X:\Data visualiser\Visualiser\assets\data\head.csv".
+[19:55:17] [info] Visualiser: Data load time: 0.228755968
+[19:55:17] [info] Visualiser: Loaded data cache from X:\Data visualiser\Visualiser\assets\data\cache_test_2.ca
+[19:55:20] [info] Visualiser: Shutting down.
+
+The optimised algorithm is provided below:
+
+float sum = 0;
+for (int i = 0; i < average_width; i++)
+{
+    sum += depth_differences[i];
+}
+int i = 0;
+for (; i < average_width / 2; i++)
+    depth_velocity_data.push_back(0);
+depth_velocity_data.push_back(sum / (float)average_width);
+for (; i < data.size() - average_width / 2 + (average_width % 2) - 1; i++)
+{
+    sum += depth_differences[i + (average_width / 2) + (average_width % 2) - 1] - depth_differences[i - (average_width / 2)];
+    depth_velocity_data.push_back(sum / (float)average_width);
+    depth_velocity_differences.push_back(depth_velocity_data[depth_velocity_data.size() - 1] - depth_velocity_data[depth_velocity_data.size() - 2]);
+}
+for (; i < data.size(); i++)
+    depth_velocity_data.push_back(0);
+
+This algorithm does require extra data in the form of the differences for both the raw data and the velocity data.
+When the original data is loaded slightly earlier, I also therefore push this data to the depth_differences list:
+
+depth_differences.push_back(data[data.size() - 1] - data[data.size() - 2]);
+
+The optimised time is acceptable, given the time taken to load the rest of the data.

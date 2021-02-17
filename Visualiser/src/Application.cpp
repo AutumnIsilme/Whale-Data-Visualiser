@@ -1,6 +1,7 @@
 #include "Log.h"
 #include "Window.h"
 #include "Application.h"
+#include "Timer.h"
 
 #include "Shaders.h"
 #include "TextureShaders.h"
@@ -27,6 +28,7 @@
 #include <vector>
 #include <cstdlib>
 #include <sstream>
+#include <cstdio>
 
 _getShader(vs_texture);
 _getShader(fs_texture);
@@ -37,7 +39,9 @@ u32 WIDTH = 1280;
 u32 HEIGHT = 720;
 
 std::vector<float> depth_data;
+std::vector<float> depth_differences;
 std::vector<float> depth_velocity_data;
+std::vector<float> depth_velocity_differences;
 std::vector<float> depth_acceleration_data;
 std::vector<float> pitch_data;
 std::vector<float> roll_data;
@@ -159,8 +163,9 @@ enum class DataType
 
 /* Load data from a file for a passed data type/buffer.
  * Called by LoadData and LoadDataCache. */
-int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepath)
+int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepath, double* x_max)
 {
+	auto load_timer = timer_create();
 	FILE* file = fopen(filepath, "rb");
 	if (file == NULL)
 	{
@@ -183,7 +188,9 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 	data.clear();
 	if (type == DataType::DEPTH)
 	{
+		depth_differences.clear();
 		depth_velocity_data.clear();
+		depth_velocity_differences.clear();
 		depth_acceleration_data.clear();
 	}
 
@@ -216,14 +223,26 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 		// This was just testing what it would look like if I graphed the sin of the heading. It didn't work very well, but the code is still here.
 		if (type == DataType::YAW)
 			yaw_sin_data.push_back(glm::sin(-std::stof(std::string(&mem[start], index - start))));
+
+		if (type == DataType::DEPTH)
+		{
+			if (data.size() == 1)
+				depth_differences.push_back(0);
+			else
+				depth_differences.push_back(data[data.size() - 1] - data[data.size() - 2]);
+		}
 	}
 
-	// Set flags for which graph to adjust the zoom level of, and log success.
+	// Set flags for which graph to adjust the zoom level of, and log success, and calculate derivatives if applicable
 	switch (type)
 	{
 	case DataType::DEPTH:
 	{
-		static int average_width = 250;
+		static const int average_width = 250;
+
+		auto t = timer_create();
+
+		/*/
 		for (int i = 0; i < data.size(); i++)
 		{
 			if (i > average_width / 2 + (average_width % 2) + 1 && i < data.size() - average_width / 2 + (average_width % 2))
@@ -232,7 +251,7 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 				float sum = 0;
 				for (int j = i - average_width / 2; j < i + average_width / 2 + (average_width % 2); j++)
 				{
-					sum += data[j] - data[j-1];
+					sum += depth_differences[j];
 				}
 				depth_velocity_data.push_back(sum / (float) average_width);
 			} else
@@ -240,6 +259,33 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 				depth_velocity_data.push_back(0);
 			}
 		}
+		/*/
+
+		{
+			float sum = 0;
+			for (int i = 0; i < average_width; i++)
+			{
+				sum += depth_differences[i];
+			}
+			int i = 0;
+			for (; i < average_width / 2; i++)
+				depth_velocity_data.push_back(0);
+			depth_velocity_data.push_back(sum / (float)average_width);
+			for (; i < data.size() - average_width / 2 + (average_width % 2) - 1; i++)
+			{
+				sum += depth_differences[i + (average_width / 2) + (average_width % 2) - 1] - depth_differences[i - (average_width / 2)];
+				depth_velocity_data.push_back(sum / (float)average_width);
+				depth_velocity_differences.push_back(depth_velocity_data[depth_velocity_data.size() - 1] - depth_velocity_data[depth_velocity_data.size() - 2]);
+			}
+			for (; i < data.size(); i++)
+				depth_velocity_data.push_back(0);
+		}
+
+		LOG_INFO("Time elapsed: {}", timer_elapsed(&t));
+
+		timer_reset(&t);
+
+		/*/
 		for (int i = 0; i < depth_velocity_data.size(); i++)
 		{
 			if (i > average_width / 2 + (average_width % 2) + 1 && i < depth_velocity_data.size() - average_width / 2 + (average_width % 2))
@@ -256,6 +302,29 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 				depth_acceleration_data.push_back(0);
 			}
 		}
+		/*/
+
+		{
+			float sum = 0;
+			for (int i = 0; i < average_width; i++)
+			{
+				sum += depth_velocity_differences[i];
+			}
+			int i = 0;
+			for (; i < average_width / 2; i++)
+				depth_acceleration_data.push_back(0);
+			depth_acceleration_data.push_back(sum / (float)average_width);
+			for (; i < data.size() - average_width / 2 + (average_width % 2) - 1; i++)
+			{
+				sum += depth_velocity_differences[i + (average_width / 2) + (average_width % 2) - 1] - depth_velocity_differences[i - (average_width / 2)];
+				depth_acceleration_data.push_back(sum / (float)average_width);
+			}
+			for (; i < data.size(); i++)
+				depth_acceleration_data.push_back(0);
+		}
+
+		LOG_INFO("Time elapsed 2: {}", timer_elapsed(&t));
+
 		/*if (depth_velocity_data.size() > 2)
 			depth_velocity_data[0] = depth_velocity_data[1];*/
 		LOG_INFO("Loaded depth data from \"{0}\".", filepath);
@@ -280,11 +349,15 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 		break;
 	}
 
+	*x_max = x_data.size();
+
+	LOG_INFO("Data load time: {}", timer_elapsed(&load_timer));
+
 	return 0;
 }
 
 /* Load data from a saved cache (currently just a list of filenames so you don't have to open each individually. */
-void LoadDataCache()
+void LoadDataCache(double* x_max)
 {
 	char* filepath = NULL;
 	nfdresult_t open_result = NFD_OpenDialog(NULL, NULL, &filepath);
@@ -345,7 +418,7 @@ void LoadDataCache()
 			// If we have already filled out this data from this cache, complain, otherwise actually load the data
 			if (!done[0])
 			{
-				int result = ActuallyLoadData(depth_data, DataType::DEPTH, fname);
+				int result = ActuallyLoadData(depth_data, DataType::DEPTH, fname, x_max);
 				// If we succeeded in reading the data, save the filepath in case we want to cache it later
 				if (!result)
 					filepaths[0] = std::string(fname);
@@ -359,7 +432,7 @@ void LoadDataCache()
 		{
 			if (!done[1])
 			{
-				int result = ActuallyLoadData(pitch_data, DataType::PITCH, fname);
+				int result = ActuallyLoadData(pitch_data, DataType::PITCH, fname, x_max);
 				if (!result)
 					filepaths[1] = std::string(fname);
 				done[1] = true;
@@ -372,7 +445,7 @@ void LoadDataCache()
 		{
 			if (!done[2])
 			{
-				int result = ActuallyLoadData(roll_data, DataType::ROLL, fname);
+				int result = ActuallyLoadData(roll_data, DataType::ROLL, fname, x_max);
 				if (!result)
 					filepaths[2] = std::string(fname);
 				done[2] = true;
@@ -385,7 +458,7 @@ void LoadDataCache()
 		{
 			if (!done[3])
 			{
-				int result = ActuallyLoadData(yaw_data, DataType::YAW, fname);
+				int result = ActuallyLoadData(yaw_data, DataType::YAW, fname, x_max);
 				if (!result)
 					filepaths[3] = std::string(fname);
 				done[3] = true;
@@ -442,9 +515,46 @@ void SaveDataCache()
 	free(filepath);
 }
 
+void ExportDataSection(double x_min, double x_max)
+{
+	if (depth_data.size() < x_max || pitch_data.size() < x_max || yaw_data.size() < x_max || roll_data.size() < x_max || x_min < 0 || x_min > x_max)
+	{
+		LOG_ERROR("Bounds check failed on export attempt");
+		return;
+	}
+	char* filepath = NULL;
+	nfdresult_t open_result = NFD_SaveDialog(NULL, NULL, &filepath);
+	if (open_result == NFD_CANCEL)
+	{
+		return;
+	} else if (open_result == NFD_ERROR)
+	{
+		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
+		return;
+	}
+
+	// Open the file in write mode
+	FILE* file = fopen(filepath, "wb");
+	if (file == NULL)
+	{
+		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		return;
+	}
+
+	u64 x1 = x_min;
+	u64 x2 = x_max;
+	for (u64 i = x1; i < x2; i++)
+	{
+		fprintf(file, "%f, %f, %f, %f\n", depth_data[i], pitch_data[i], roll_data[i], yaw_data[i]);
+	}
+	fclose(file);
+	LOG_INFO("Saved data cache to {}", filepath);
+	free(filepath);
+}
+
 // @TODO: Move this to a worker thread so it doesn't block the main window?
 /* Load a specific data type from a file */
-void LoadData(std::vector<float>& data, DataType type)
+void LoadData(std::vector<float>& data, DataType type, double* x_max)
 {
 	char* filepath = NULL;
 	nfdresult_t open_result = NFD_OpenDialog(NULL, NULL, &filepath);
@@ -457,7 +567,7 @@ void LoadData(std::vector<float>& data, DataType type)
 		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
 		return;
 	}
-	int result = ActuallyLoadData(data, type, filepath);
+	int result = ActuallyLoadData(data, type, filepath, x_max);
 	// If we succeeded, save the filepath in case we want to cache it later
 	if (!result)
 		filepaths[(int)type] = std::string(filepath);
@@ -498,7 +608,7 @@ void LoadTextures()
 }
 
 /* Create that menu bar at the top of the window */
-bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layout, bool *use_default_layout)
+bool create_menu_bar(bool running, bool* need_load_layout, bool* need_save_layout, bool* use_default_layout, double* x_max, double* x_min)
 {
 	if (ImGui::BeginMenuBar())
 	{
@@ -508,23 +618,28 @@ bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layou
 			{
 				if (ImGui::MenuItem("Depth Data"))
 				{
-					LoadData(depth_data, DataType::DEPTH);
+					LoadData(depth_data, DataType::DEPTH, x_max);
+					*x_min = 0;
 				}
 				if (ImGui::MenuItem("Pitch Data"))
 				{
-					LoadData(pitch_data, DataType::PITCH);
+					LoadData(pitch_data, DataType::PITCH, x_max);
+					*x_min = 0;
 				}
 				if (ImGui::MenuItem("Roll Data"))
 				{
-					LoadData(roll_data, DataType::ROLL);
+					LoadData(roll_data, DataType::ROLL, x_max);
+					*x_min = 0;
 				}
 				if (ImGui::MenuItem("Heading Data"))
 				{
-					LoadData(yaw_data, DataType::YAW);
+					LoadData(yaw_data, DataType::YAW, x_max);
+					*x_min = 0;
 				}
 				if (ImGui::MenuItem("Data Cache"))
 				{
-					LoadDataCache();
+					LoadDataCache(x_max);
+					*x_min = 0;
 				}
 				ImGui::EndMenu();
 			}
@@ -534,6 +649,10 @@ bool create_menu_bar(bool running, bool *need_load_layout, bool *need_save_layou
 				if (ImGui::MenuItem("Data Cache"))
 				{
 					SaveDataCache();
+				}
+				if (ImGui::MenuItem("Export Data Section"))
+				{
+					ExportDataSection(*x_min, *x_max);
 				}
 				ImGui::EndMenu();
 			}
@@ -720,6 +839,11 @@ int main(int argc, char** argv)
 	bool do_overwrite_default_settings = false;
 	float temporal_index = 0;
 	float flow_rate = 1.0f;
+	double graph_x_min = 0, graph_x_max = 0;
+	float mark_0 = 0, mark_1 = 0;
+	float x1[2] = { 0, 0 };
+	float x2[2] = { 0, 0 };
+	const float ys[2] = { -100000000000000, 100000000000000 };
 	glm::mat4 view = glm::lookAt(glm::vec3(0.0f, -5.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), { 0.0f, 0.0f, 1.0f });
 	glm::mat4 projection = glm::mat4(1.0f);
 	glm::vec3 orientation = glm::vec3(0.0f);
@@ -770,7 +894,7 @@ int main(int argc, char** argv)
 		bool need_load_layout = false;
 		bool need_save_layout = false;
 		bool use_default_layout = false;
-		running = create_menu_bar(running, &need_load_layout, &need_save_layout, &use_default_layout);
+		running = create_menu_bar(running, &need_load_layout, &need_save_layout, &use_default_layout, &graph_x_max, &graph_x_min);
 
 		ImGui::Begin("Timeline");
 		{
@@ -806,12 +930,37 @@ int main(int argc, char** argv)
 			}
 
 			// Show the popup window
-			ImGui::SetNextWindowPos(ImVec2(ImGui::GetMousePos().x, ImGui::GetMousePos().y - 64), ImGuiCond_Appearing);
+			ImGui::SetNextWindowPos(ImVec2(ImGui::GetMousePos().x, ImGui::GetMousePos().y - 96), ImGuiCond_Appearing);
 			if (ImGui::BeginPopup("Player Settings"))
 			{
 				ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f);
 				if (ImGui::Button("Reset"))
 					flow_rate = 1.0f;
+				if (ImGui::Button("Set Mark 1"))
+				{
+					if (temporal_index > mark_1)
+					{
+						mark_1 = temporal_index;
+						x2[0] = mark_1;
+						x2[1] = mark_1;
+					}
+					mark_0 = temporal_index;
+					x1[0] = mark_0;
+					x1[1] = mark_0;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Set Mark 2"))
+				{
+					if (temporal_index < mark_0)
+					{
+						mark_0 = temporal_index;
+						x1[0] = mark_0;
+						x1[1] = mark_0;
+					}
+					mark_1 = temporal_index;
+					x2[0] = mark_1;
+					x2[1] = mark_1;
+				}
 				ImGui::EndPopup();
 			}
 		}
@@ -819,6 +968,7 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("Pitch Graph");
 		{
+			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
 			ImPlot::SetNextPlotLimits(-200, pitch_data.size() + 200, -3, 3, just_loaded_pitch ? ImGuiCond_Always : ImGuiCond_Once);
 			if (ImPlot::BeginPlot("Pitch Data", "Time", "Pitch"))
 			{
@@ -838,6 +988,8 @@ int main(int argc, char** argv)
 				// Show current location in time
 				if (pitch_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &pitch_data[(int)temporal_index], 1);
+				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
+				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
 				ImPlot::EndPlot();
 			}
 		}
@@ -845,6 +997,7 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("Roll Graph");
 		{
+			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
 			ImPlot::SetNextPlotLimits(-200, roll_data.size() + 200, -3, 3, just_loaded_roll ? ImGuiCond_Always : ImGuiCond_Once);
 			if (ImPlot::BeginPlot("Roll Data", "Time", "Roll"))
 			{
@@ -864,6 +1017,8 @@ int main(int argc, char** argv)
 				// Show current location in time
 				if (roll_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &roll_data[(int)temporal_index], 1);
+				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
+				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
 				ImPlot::EndPlot();
 			}
 		}
@@ -871,6 +1026,7 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("Yaw Graph");
 		{
+			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
 			ImPlot::SetNextPlotLimits(-200, yaw_data.size() + 200, -3, 3, just_loaded_yaw ? ImGuiCond_Always : ImGuiCond_Once);
 			if (ImPlot::BeginPlot("Heading Data", "Time", "Yaw"))
 			{
@@ -890,6 +1046,8 @@ int main(int argc, char** argv)
 				// Show current location in time
 				if (yaw_data.size() != 0)
 					ImPlot::PlotScatter("Current", &temporal_index, &yaw_data[(int)temporal_index], 1);
+				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
+				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
 				ImPlot::EndPlot();
 			}
 		}
@@ -1043,6 +1201,7 @@ int main(int argc, char** argv)
 
         ImGui::Begin("Depth Graph");
         {
+			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
             ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
             if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
             {
@@ -1062,6 +1221,10 @@ int main(int argc, char** argv)
                 // Show current location in time
                 if (depth_data.size() != 0)
                     ImPlot::PlotScatter("Current", &temporal_index, &depth_data[(int)temporal_index], 1);
+				
+				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
+				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
+				
                 ImPlot::EndPlot();
             }
         }
@@ -1069,6 +1232,7 @@ int main(int argc, char** argv)
 
         ImGui::Begin("Depth Velocity Graph");
         {
+			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
             ImPlot::SetNextPlotLimits(-200, depth_velocity_data.size() + 200, -0.2, 0.2, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
             if (ImPlot::BeginPlot("Depth Velocity Data", "Time", "Velocity"))
             {
@@ -1088,6 +1252,8 @@ int main(int argc, char** argv)
                 // Show current location in time
                 if (depth_velocity_data.size() != 0)
                     ImPlot::PlotScatter("Current", &temporal_index, &depth_velocity_data[(int)temporal_index], 1);
+				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
+				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
                 ImPlot::EndPlot();
             }
         }
@@ -1095,6 +1261,7 @@ int main(int argc, char** argv)
 
         ImGui::Begin("Depth Acceleration Graph");
         {
+			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
             ImPlot::SetNextPlotLimits(-200, depth_acceleration_data.size() + 200, -0.0004, 0.0004, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
             if (ImPlot::BeginPlot("Depth Acceleration Data", "Time", "Acceleration"))
             {
@@ -1114,6 +1281,8 @@ int main(int argc, char** argv)
                 // Show current location in time
                 if (depth_acceleration_data.size() != 0)
                     ImPlot::PlotScatter("Current", &temporal_index, &depth_acceleration_data[(int)temporal_index], 1);
+				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
+				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
                 ImPlot::EndPlot();
             }
         }

@@ -1,0 +1,45 @@
+In my first iteration of marks, I overlooked the fact that you can set the first mark ahead of the second mark.
+I corrected for setting the second mark before the first mark by moving the first mark back, but it was still
+possible to get them in the wrong order. The algorithm I used is below:
+
+if (Button("Set Mark 1"))
+{
+    mark_0 = temporal_index;
+    x1[0] = mark_0;
+    x1[1] = mark_0;
+}
+SameLine();
+if (Button("Set Mark 2"))
+{
+    if (temporal_index < mark_0)
+    {
+        mark_0 = temporal_index;
+        x1[0] = mark_0;
+        x1[1] = mark_0;
+    }
+    mark_1 = temporal_index;
+    x2[0] = mark_1;
+    x2[1] = mark_1;
+}
+
+I had to do basically the same thing as in the mark 2 bit in mark 1 as well:
+
+if (Button("Set Mark 1"))
+{
+    mark_0 = temporal_index;
+    x1[0] = mark_0;
+    x1[1] = mark_0;
+}
+SameLine();
+if (Button("Set Mark 2"))
+{
+    if (temporal_index > mark_1)
+    {
+        mark_1 = temporal_index;
+        x2[0] = mark_1;
+        x2[1] = mark_1;
+    }
+    mark_0 = temporal_index;
+    x1[0] = mark_0;
+    x1[1] = mark_0;
+}
