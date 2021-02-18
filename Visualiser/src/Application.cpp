@@ -1007,8 +1007,7 @@ int main(int argc, char** argv)
 {
 	Log::Init();
 
-	// @TODO: get monitor size or something to set resolution
-	if (mainWindow.Init(WIDTH, HEIGHT, true) == -1)
+	if (mainWindow.Init(&WIDTH, &HEIGHT, true) == -1)
 	{
 		LOG_CRITICAL("Window init failed, terminating.");
 		return -1;

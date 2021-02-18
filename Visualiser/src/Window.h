@@ -5,7 +5,7 @@
 class Window
 {
 public:
-	int Init(u32 width, u32 height, bool resizable);
+	int Init(u32 *width, u32 *height, bool resizable);
 	u32 Update();
 	void SwapBuffers();
 	void* GetPlatformWindow();

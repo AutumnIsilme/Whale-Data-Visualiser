@@ -60,7 +60,7 @@ void window_close_callback(GLFWwindow* window)
 {
 }
 
-int Window::Init(u32 width, u32 height, bool resizable)
+int Window::Init(u32 *width, u32 *height, bool resizable)
 {
 	int init_result = glfwInit();
 	if (init_result != GLFW_TRUE)
@@ -72,7 +72,9 @@ int Window::Init(u32 width, u32 height, bool resizable)
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, resizable);
 
-	glfw_window = glfwCreateWindow(width, height, "Visualiser", NULL, NULL);
+	glfw_window = glfwCreateWindow(*width, *height, "Visualiser", NULL, NULL);
+	glfwMaximizeWindow(glfw_window);
+	glfwGetWindowSize(glfw_window, (s32*)width, (s32*)height);
 
 	if (glfw_window == NULL)
 	{
