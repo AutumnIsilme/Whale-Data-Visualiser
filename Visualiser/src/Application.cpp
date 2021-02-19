@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <cstdio>
+#include <thread>
 
 _getShader(vs_texture);
 _getShader(fs_texture);
@@ -166,7 +167,7 @@ enum class DataType
 
 /* Load data from a file for a passed data type/buffer.
  * Called by LoadData and LoadDataCache. */
-int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepath, double* x_max)
+int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepath, double* x_max, bool do_set_x_data)
 {
 	auto load_timer = timer_create();
 	FILE* file = fopen(filepath, "rb");
@@ -188,7 +189,7 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 	fclose(file);
 
 	// @TODO: Maybe hold onto the old data to not replace it if the input is bad?
-	data.clear();
+	data->clear();
 	if (type == DataType::DEPTH)
 	{
 		depth_differences.clear();
@@ -200,9 +201,11 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 		yaw_sin_data.clear();
 
 	// @TODO: X data compatability check
-	bool do_set_x_data = false;
+	/*bool do_set_x_data = false;
 	if (x_data.size() == 0)
-		do_set_x_data = true;
+		do_set_x_data = true;*/
+
+	const int sign_corrections[4] = { -1, 1, 1, 1 };
 
 	// Loop through the data in the file
 	for (u32 index = 0; index < filesize; index++)
@@ -219,7 +222,7 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 		{
 			LOG_ERROR("Malformed data input: Expected number or newline, got {0} at {1}.", mem[index], index);
 			// @TODO: Maybe save the old data and restore if something breaks?
-			data.clear();
+			data->clear();
 			if (type == DataType::DEPTH)
 			{
 				depth_differences.clear();
@@ -234,20 +237,20 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 			return 2;
 		}
 		// Extract the number that we now know the start and length of, and turn it into a number
-		data.push_back(-std::stof(std::string(&mem[start], index - start)));
+		data->push_back(sign_corrections[(unsigned)type] * std::stof(std::string(&mem[start], index - start)));
 		// If we haven't filled the x_data buffer yet (just a sequence of numbers up to the length of the data), add the next number
 		if (do_set_x_data)
 			x_data.push_back(x_data.size());
 		// This was just testing what it would look like if I graphed the sin of the heading. It didn't work very well, but the code is still here.
 		if (type == DataType::YAW)
-			yaw_sin_data.push_back(glm::sin(-std::stof(std::string(&mem[start], index - start))));
+			yaw_sin_data.push_back(glm::sin(sign_corrections[(unsigned)type] * std::stof(std::string(&mem[start], index - start))));
 
 		if (type == DataType::DEPTH)
 		{
-			if (data.size() == 1)
+			if (data->size() == 1)
 				depth_differences.push_back(0);
 			else
-				depth_differences.push_back(data[data.size() - 1] - data[data.size() - 2]);
+				depth_differences.push_back(data->at(data->size() - 1) - data->at(data->size() - 2));
 		}
 	}
 
@@ -289,13 +292,13 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 			for (; i < average_width / 2; i++)
 				depth_velocity_data.push_back(0);
 			depth_velocity_data.push_back(sum / (float)average_width);
-			for (; i < data.size() - average_width / 2 + (average_width % 2) - 1; i++)
+			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
 				sum += depth_differences[i + (average_width / 2) + (average_width % 2) - 1] - depth_differences[i - (average_width / 2)];
 				depth_velocity_data.push_back(sum / (float)average_width);
 				depth_velocity_differences.push_back(depth_velocity_data[depth_velocity_data.size() - 1] - depth_velocity_data[depth_velocity_data.size() - 2]);
 			}
-			for (; i < data.size(); i++)
+			for (; i < data->size(); i++)
 				depth_velocity_data.push_back(0);
 		}
 
@@ -332,12 +335,12 @@ int ActuallyLoadData(std::vector<float>& data, DataType type, const char* filepa
 			for (; i < average_width / 2; i++)
 				depth_acceleration_data.push_back(0);
 			depth_acceleration_data.push_back(sum / (float)average_width);
-			for (; i < data.size() - average_width / 2 + (average_width % 2) - 1; i++)
+			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
 				sum += depth_velocity_differences[i + (average_width / 2) + (average_width % 2) - 1] - depth_velocity_differences[i - (average_width / 2)];
 				depth_acceleration_data.push_back(sum / (float)average_width);
 			}
-			for (; i < data.size(); i++)
+			for (; i < data->size(); i++)
 				depth_acceleration_data.push_back(0);
 		}
 
@@ -631,6 +634,10 @@ void LoadDataCache(double* x_max)
 		mark_0 = 0;
 		mark_1 = 0;
 
+		std::thread threads[4];
+		int results[4] = { 0 };
+		std::string fnames[4];
+
 		// Start the loop through the cache file
 		bool done[4] = { 0 };
 		while (head < mem + filesize)
@@ -652,6 +659,12 @@ void LoadDataCache(double* x_max)
 			memcpy(fname, head - count, count);
 			fname[count] = 0;
 
+			auto load = [](std::vector<float>* data, DataType type, std::string fname, double* x_max, bool set_x_data, int* result)
+			{
+				LOG_INFO("Thread lambda called with {}, {}, {}, {}", type, fname, *x_max, set_x_data);
+				*result = ActuallyLoadData(data, type, fname.c_str(), x_max, set_x_data);
+			};
+
 			switch (type)
 			{
 			case '0':
@@ -659,11 +672,10 @@ void LoadDataCache(double* x_max)
 				// If we have already filled out this data from this cache, complain, otherwise actually load the data
 				if (!done[0])
 				{
-					int result = ActuallyLoadData(depth_data, DataType::DEPTH, fname, x_max);
-					// If we succeeded in reading the data, save the filepath in case we want to cache it later
-					if (!result)
-						filepaths[0] = std::string(fname);
 					done[0] = true;
+					fnames[0] = std::string(fname);
+					LOG_INFO("0 fname: {}", fname);
+					threads[0] = std::thread(load, &depth_data, DataType::DEPTH, fnames[0], x_max, true, &results[0]);
 				} else
 				{
 					LOG_WARN("Multiple data of the same type (Depth) present at filename {}", fname);
@@ -673,10 +685,10 @@ void LoadDataCache(double* x_max)
 			{
 				if (!done[1])
 				{
-					int result = ActuallyLoadData(pitch_data, DataType::PITCH, fname, x_max);
-					if (!result)
-						filepaths[1] = std::string(fname);
 					done[1] = true;
+					fnames[1] = std::string(fname);
+					LOG_INFO("1 fname: {}", fname);
+					threads[1] = std::thread(load, &pitch_data, DataType::PITCH, fnames[1], x_max, false, &results[1]);
 				} else
 				{
 					LOG_WARN("Multiple data of the same type (Pitch) present at filename {}", fname);
@@ -686,10 +698,11 @@ void LoadDataCache(double* x_max)
 			{
 				if (!done[2])
 				{
-					int result = ActuallyLoadData(roll_data, DataType::ROLL, fname, x_max);
-					if (!result)
-						filepaths[2] = std::string(fname);
 					done[2] = true;
+					fnames[2] = std::string(fname);
+					LOG_INFO("2 fname: {}", fname);
+					threads[2] = std::thread(load, &roll_data, DataType::ROLL, fnames[2], x_max, false, &results[2]);
+					//int result = ActuallyLoadData(roll_data, DataType::ROLL, fname, x_max);
 				} else
 				{
 					LOG_WARN("Multiple data of the same type (Roll) present at filename {}", fname);
@@ -699,10 +712,11 @@ void LoadDataCache(double* x_max)
 			{
 				if (!done[3])
 				{
-					int result = ActuallyLoadData(yaw_data, DataType::YAW, fname, x_max);
-					if (!result)
-						filepaths[3] = std::string(fname);
 					done[3] = true;
+					fnames[3] = std::string(fname);
+					LOG_INFO("3 fname: {}", fname);
+					threads[3] = std::thread(load, &yaw_data, DataType::YAW, fnames[3], x_max, false, &results[3]);
+					//int result = ActuallyLoadData(yaw_data, DataType::YAW, fname, x_max);
 				} else
 				{
 					LOG_WARN("Multiple data of the same type (Heading) present at filename {}", fname);
@@ -717,6 +731,18 @@ void LoadDataCache(double* x_max)
 			{
 				head++;
 			}
+		}
+		for (int i = 0; i < 4; i++)
+		{
+			if (threads[i].joinable())
+				threads[i].join();
+			if (!results[i])
+				filepaths[i] = fnames[i];
+		}
+		if (x_data.size() == 0)
+		{
+			LOG_CRITICAL("Threading is broken!");
+			exit(1);
 		}
 	} break;
 	}
@@ -818,7 +844,7 @@ void LoadData(std::vector<float>& data, DataType type, double* x_max)
 		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
 		return;
 	}
-	int result = ActuallyLoadData(data, type, filepath, x_max);
+	int result = ActuallyLoadData(&data, type, filepath, x_max, x_data.size() == 0);
 	// If we succeeded, save the filepath in case we want to cache it later
 	if (!result)
 		filepaths[(int)type] = std::string(filepath);
