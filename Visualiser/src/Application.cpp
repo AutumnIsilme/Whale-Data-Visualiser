@@ -662,7 +662,7 @@ void LoadDataCache(double* x_max)
 
 			auto load = [](std::vector<float>* data, DataType type, std::string fname, double* x_max, bool set_x_data, int* result)
 			{
-				LOG_INFO("Thread lambda called with {}, {}, {}, {}", type, fname, *x_max, set_x_data);
+				//LOG_INFO("Thread lambda called with {}, {}, {}, {}", type, fname, *x_max, set_x_data);
 				*result = ActuallyLoadData(data, type, fname.c_str(), x_max, set_x_data);
 			};
 
@@ -675,7 +675,6 @@ void LoadDataCache(double* x_max)
 				{
 					done[0] = true;
 					fnames[0] = std::string(fname);
-					LOG_INFO("0 fname: {}", fname);
 					threads[0] = std::thread(load, &depth_data, DataType::DEPTH, fnames[0], x_max, true, &results[0]);
 				} else
 				{
@@ -688,7 +687,6 @@ void LoadDataCache(double* x_max)
 				{
 					done[1] = true;
 					fnames[1] = std::string(fname);
-					LOG_INFO("1 fname: {}", fname);
 					threads[1] = std::thread(load, &pitch_data, DataType::PITCH, fnames[1], x_max, false, &results[1]);
 				} else
 				{
@@ -701,7 +699,6 @@ void LoadDataCache(double* x_max)
 				{
 					done[2] = true;
 					fnames[2] = std::string(fname);
-					LOG_INFO("2 fname: {}", fname);
 					threads[2] = std::thread(load, &roll_data, DataType::ROLL, fnames[2], x_max, false, &results[2]);
 					//int result = ActuallyLoadData(roll_data, DataType::ROLL, fname, x_max);
 				} else
@@ -715,7 +712,6 @@ void LoadDataCache(double* x_max)
 				{
 					done[3] = true;
 					fnames[3] = std::string(fname);
-					LOG_INFO("3 fname: {}", fname);
 					threads[3] = std::thread(load, &yaw_data, DataType::YAW, fnames[3], x_max, false, &results[3]);
 					//int result = ActuallyLoadData(yaw_data, DataType::YAW, fname, x_max);
 				} else
