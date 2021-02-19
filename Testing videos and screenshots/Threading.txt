@@ -1,0 +1,7 @@
+I had the idea to use threading to speed up loading the filename type of cache.
+Initially this didn't work, but I figured most of the reasons out before being stumped by the wrong data file being loaded for some graphs sometimes.
+I eventually tracked this down to the fact that I free the filename before the thread starts if the timing is right.
+This meant that the same bit of memory was used to store the filename and it ended up giving the wrong answer.
+Therefore, I changed the code to copy the filename and pass the copy. I had already copied it for another reason, but I needed to actually pass the copy.
+
+In terms of performance improvements, this brings down the time from around 0.6 seconds to around 0.3 seconds to load a filename cache.

@@ -401,6 +401,7 @@ void LoadDataCache(double* x_max)
 		LOG_ERROR("Open dialog failed: {}", NFD_GetError());
 		return;
 	}
+	auto t = timer_create();
 
 	FILE* file = fopen(filepath, "rb");
 	if (file == NULL)
@@ -746,7 +747,7 @@ void LoadDataCache(double* x_max)
 		}
 	} break;
 	}
-	LOG_INFO("Loaded data cache from {}", filepath);
+	LOG_INFO("Loaded data cache from {}, taking {} seconds.", filepath, timer_elapsed(&t));
 }
 
 void ExportDataSection(double x_min, double x_max)
