@@ -1062,11 +1062,13 @@ void on_mouse_move_event(double x, double y)
 		camera_heading += dx / frame_width * two_pi;
 		camera_pitch += dy / frame_height * pi;
 		// Keep the camera pitch in the correct range from straight up to straight down.
+		if (camera_pitch > half_pi)
 			camera_pitch = half_pi;
 		else if (camera_pitch < -half_pi)
 			camera_pitch = -half_pi;
-		if (camera_heading > pi)
 		// Adjust the camera heading value so it remains in the range -pi to pi (Doesn't actually affect the rotation, but keeps the numbers accurate.
+		if (camera_heading > pi)
+			camera_heading -= two_pi;
 		else if (camera_heading < -pi)
 			camera_heading += two_pi;
 	}
