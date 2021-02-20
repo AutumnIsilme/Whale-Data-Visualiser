@@ -1049,25 +1049,26 @@ void on_mouse_button_up_event(int button)
 		changing_orientation = false;
 }
 
-/* Move the camera when the mouse moves, if applicable */
+const double half_pi = 1.5707963267948966;
+const double pi = 3.141592653589793;
+const double two_pi = 6.283185307179586;
+
 void on_mouse_move_event(double x, double y)
 {
 	if (changing_orientation)
 	{
 		double dx = x - cursor_x;
 		double dy = y - cursor_y;
-		camera_heading += dx / frame_width * 6.283185307179586;
-		camera_pitch += dy / frame_height * 3.141592653589793;
+		camera_heading += dx / frame_width * two_pi;
+		camera_pitch += dy / frame_height * pi;
 		// Keep the camera pitch in the correct range from straight up to straight down.
-		if (camera_pitch > 1.5707963267948966)
-			camera_pitch = 1.5707963267948966;
-		else if (camera_pitch < -1.5707963267948966)
-			camera_pitch = -1.5707963267948966;
+			camera_pitch = half_pi;
+		else if (camera_pitch < -half_pi)
+			camera_pitch = -half_pi;
+		if (camera_heading > pi)
 		// Adjust the camera heading value so it remains in the range -pi to pi (Doesn't actually affect the rotation, but keeps the numbers accurate.
-		if (camera_heading > 3.141592653589793)
-			camera_heading -= 6.283185307179586;
-		else if (camera_heading < -3.141592653589793)
-			camera_heading += 6.283185307179586;
+		else if (camera_heading < -pi)
+			camera_heading += two_pi;
 	}
 
 	cursor_x = x;
