@@ -39,6 +39,8 @@ Window mainWindow;
 u32 WIDTH = 1280;
 u32 HEIGHT = 720;
 
+const int SAMPLES_PER_SECOND = 25;
+
 std::vector<float> depth_data;
 std::vector<float> depth_differences;
 std::vector<float> depth_velocity_data;
@@ -303,7 +305,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
 				sum += depth_differences[i + (average_width / 2) + (average_width % 2) - 1] - depth_differences[i - (average_width / 2)];
-				depth_velocity_data.push_back(sum / (float)average_width);
+				depth_velocity_data.push_back(SAMPLES_PER_SECOND * sum / (float)average_width);
 				depth_velocity_differences.push_back(depth_velocity_data[depth_velocity_data.size() - 1] - depth_velocity_data[depth_velocity_data.size() - 2]);
 			}
 			for (; i < data->size(); i++)
@@ -346,7 +348,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
 				sum += depth_velocity_differences[i + (average_width / 2) + (average_width % 2) - 1] - depth_velocity_differences[i - (average_width / 2)];
-				depth_acceleration_data.push_back(sum / (float)average_width);
+				depth_acceleration_data.push_back(SAMPLES_PER_SECOND * sum / (float)average_width);
 			}
 			for (; i < data->size(); i++)
 				depth_acceleration_data.push_back(0);
@@ -1263,38 +1265,50 @@ int main(int argc, char** argv)
 			}
 
 			// Show the popup window
-			ImGui::SetNextWindowPos(ImVec2(ImGui::GetMousePos().x, ImGui::GetMousePos().y - 96), ImGuiCond_Appearing);
+			ImGui::SetNextWindowPos(ImVec2(ImGui::GetMousePos().x, ImGui::GetMousePos().y - 64), ImGuiCond_Appearing);
 			if (ImGui::BeginPopup("Player Settings"))
 			{
 				ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f);
 				if (ImGui::Button("Reset"))
 					flow_rate = 1.0f;
-				if (ImGui::Button("Set Mark 1"))
+				ImGui::EndPopup();
+			}
+
+			if (ImGui::Button("Set Mark 1"))
+			{
+				if (temporal_index > mark_1)
 				{
-					if (temporal_index > mark_1)
-					{
-						mark_1 = temporal_index;
-						x2[0] = mark_1;
-						x2[1] = mark_1;
-					}
-					mark_0 = temporal_index;
-					x1[0] = mark_0;
-					x1[1] = mark_0;
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("Set Mark 2"))
-				{
-					if (temporal_index < mark_0)
-					{
-						mark_0 = temporal_index;
-						x1[0] = mark_0;
-						x1[1] = mark_0;
-					}
 					mark_1 = temporal_index;
 					x2[0] = mark_1;
 					x2[1] = mark_1;
 				}
-				ImGui::EndPopup();
+				mark_0 = temporal_index;
+				x1[0] = mark_0;
+				x1[1] = mark_0;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Set Mark 2"))
+			{
+				if (temporal_index < mark_0)
+				{
+					mark_0 = temporal_index;
+					x1[0] = mark_0;
+					x1[1] = mark_0;
+				}
+				mark_1 = temporal_index;
+				x2[0] = mark_1;
+				x2[1] = mark_1;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Mark All"))
+			{
+				mark_0 = 0;
+				mark_1 = x_data.size();
+			}
+
+			if (ImGui::Button("Heading data: Absolute"))
+			{
+
 			}
 		}
 		ImGui::End();
@@ -1566,7 +1580,7 @@ int main(int argc, char** argv)
 		ImGui::Begin("Depth Velocity Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, depth_velocity_data.size() + 200, -0.2, 0.2, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			ImPlot::SetNextPlotLimits(-200, depth_velocity_data.size() + 200, -5, 5, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
 			if (ImPlot::BeginPlot("Depth Velocity Data", "Time", "Velocity"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1595,7 +1609,7 @@ int main(int argc, char** argv)
 		ImGui::Begin("Depth Acceleration Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, depth_acceleration_data.size() + 200, -0.0004, 0.0004, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			ImPlot::SetNextPlotLimits(-200, depth_acceleration_data.size() + 200, -0.25, 0.25, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
 			if (ImPlot::BeginPlot("Depth Acceleration Data", "Time", "Acceleration"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1618,6 +1632,21 @@ int main(int argc, char** argv)
 				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
 				ImPlot::EndPlot();
 			}
+		}
+		ImGui::End();
+
+		ImGui::Begin("Stats");
+		{
+			ImGui::Text("Depth: %f, Velocity: %f, Acceleration: %f", 
+				depth_data.size() ? depth_data[temporal_index] : 0, 
+				depth_data.size() ? depth_velocity_data[temporal_index] : 0, 
+				depth_data.size() ? depth_acceleration_data[temporal_index] : 0);
+
+			ImGui::Text("Pitch: %f", pitch_data.size() ? pitch_data[temporal_index] : 0);
+			ImGui::Text("Roll: %f", roll_data.size() ? roll_data[temporal_index] : 0);
+			ImGui::Text("Heading: %f, Turn rate: %f", 
+				yaw_data.size() ? yaw_data[temporal_index] : 0,
+				0.f);
 		}
 		ImGui::End();
 
