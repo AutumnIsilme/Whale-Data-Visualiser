@@ -330,7 +330,7 @@ void imguiRender(ImDrawData* drawData, uint16_t vid)
 		}
 
 		bgfx::allocTransientVertexBuffer(&tvb, numVertices, imguiVertexLayout);
-		bgfx::allocTransientIndexBuffer(&tib, numIndices, true);
+		bgfx::allocTransientIndexBuffer(&tib, numIndices, false);
 
 		ImDrawVert* verts = (ImDrawVert*)tvb.data;
 		memcpy(verts, drawList->VtxBuffer.begin(), numVertices * sizeof(ImDrawVert));
