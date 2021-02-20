@@ -1525,7 +1525,7 @@ int main(int argc, char** argv)
 				render_axis(XZ_vbuffer, xz_axes_texture);
 
 			// Render the viewport to the screen
-			ImGui::Image(IMGUI_TEXTURE_FROM_BGFX(texture_handle), available_space);
+			ImGui::ImageButton(IMGUI_TEXTURE_FROM_BGFX(texture_handle), available_space, ImVec2(0, 0), ImVec2(1, 1), 0, ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1));
 		}
 		ImGui::End();
 
