@@ -139,6 +139,9 @@ bgfx::TextureHandle whale_texture;
 std::string filepaths[4] = { "", "", "", "" };
 bool single_cache = false;
 
+bool show_err_msg = false;
+std::string err_msg = "";
+
 float mark_0 = 0, mark_1 = 0;
 
 /* Called when the window size changes and at startup to ensure clear colour is set and window size is known */
@@ -174,6 +177,8 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 	if (file == NULL)
 	{
 		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		show_err_msg = true;
+		err_msg = "Failed to open file";
 		return 1;
 	}
 
@@ -221,6 +226,9 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 		if (mem[index] != '\n')
 		{
 			LOG_ERROR("Malformed data input: Expected number or newline, got {0} at {1}.", mem[index], index);
+
+			show_err_msg = true;
+			err_msg = "Malformed data input: Expected number or newline";
 			// @TODO: Maybe save the old data and restore if something breaks?
 			data->clear();
 			if (type == DataType::DEPTH)
@@ -407,6 +415,8 @@ void LoadDataCache(double* x_max)
 	if (file == NULL)
 	{
 		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		show_err_msg = true;
+		err_msg = "Failed to open file";
 		return;
 	}
 
@@ -428,6 +438,8 @@ void LoadDataCache(double* x_max)
 		if (*mem != '@') goto default_load;
 		while (*head != ' ' && head - mem < 15) head++;
 		LOG_ERROR("Malformed data input: Unrecognised header tag ({})", std::string(mem, head - mem));
+		show_err_msg = true;
+		err_msg = "Malformed data input: Unrecognised header tag";
 		return;
 	}
 
@@ -439,11 +451,15 @@ void LoadDataCache(double* x_max)
 		{
 			while (*head != '\n' && head - mem < 15) head++;
 			LOG_ERROR("Malformed data input: Unrecognised header type ({})", std::string(mem, head - mem));
+			show_err_msg = true;
+			err_msg = "Malformed data input: Unrecognised header type";
 			return;
 		}
 		if (expect(&head, '\n'))
 		{
 			LOG_ERROR("Malformed data input: Expected newline, got {}", *head);
+			show_err_msg = true;
+			err_msg = "Malformed data input: Expected newline";
 			return;
 		}
 
@@ -484,6 +500,8 @@ void LoadDataCache(double* x_max)
 			if (expect(&head, ',') || expect(&head, ' '))
 			{
 				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				show_err_msg = true;
+				err_msg = "Malformed data input: Expected newline";
 				// @TODO: Maybe save the old data and restore if something breaks?
 				depth_data.clear();
 				depth_differences.clear();
@@ -508,6 +526,8 @@ void LoadDataCache(double* x_max)
 			if (expect(&head, ',') || expect(&head, ' '))
 			{
 				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				show_err_msg = true;
+				err_msg = "Malformed data input: Expected newline";
 				depth_data.clear();
 				depth_differences.clear();
 				depth_velocity_data.clear();
@@ -531,6 +551,8 @@ void LoadDataCache(double* x_max)
 			if (expect(&head, ',') || expect(&head, ' '))
 			{
 				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				show_err_msg = true;
+				err_msg = "Malformed data input: Expected newline";
 				depth_data.clear();
 				depth_differences.clear();
 				depth_velocity_data.clear();
@@ -554,6 +576,8 @@ void LoadDataCache(double* x_max)
 			if (expect(&head, ',') || expect(&head, ' '))
 			{
 				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				show_err_msg = true;
+				err_msg = "Malformed data input: Expected newline";
 				depth_data.clear();
 				depth_differences.clear();
 				depth_velocity_data.clear();
@@ -577,6 +601,8 @@ void LoadDataCache(double* x_max)
 			if (expect(&head, ',') || expect(&head, ' '))
 			{
 				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				show_err_msg = true;
+				err_msg = "Malformed data input: Expected newline";
 				depth_data.clear();
 				depth_differences.clear();
 				depth_velocity_data.clear();
@@ -606,6 +632,8 @@ void LoadDataCache(double* x_max)
 			if (expect(&head, '\n'))
 			{
 				LOG_ERROR("Malformed data input: Expected newline, got {0} at {1}.", mem[index], index);
+				show_err_msg = true;
+				err_msg = "Malformed data input: Expected newline";
 				depth_data.clear();
 				depth_differences.clear();
 				depth_velocity_data.clear();
@@ -620,7 +648,9 @@ void LoadDataCache(double* x_max)
 		if (expect(&head, 'a') || expect(&head, 'c') || expect(&head, 'h') || expect(&head, 'e'))
 		{
 			while (*head != '\n' && head - mem < 15) head++;
+			show_err_msg = true;
 			LOG_ERROR("Malformed data input: Unrecognised header type ({})", std::string(mem, head - mem));
+			err_msg = "Malformed data input: Unrecognised header type";
 			return;
 		}
 
@@ -720,7 +750,10 @@ void LoadDataCache(double* x_max)
 				}
 			} break;
 			default:
-				break;
+			{
+				LOG_ERROR("Line malformed: no type indicator present");
+				show_err_msg = true;
+			} break;
 			}
 
 			// Go forward until we reach the next entry
@@ -735,8 +768,22 @@ void LoadDataCache(double* x_max)
 				threads[i].join();
 			if (!results[i])
 				filepaths[i] = fnames[i];
+			else
+			{
+				show_err_msg = true;
+			}
 		}
-		if (x_data.size() == 0)
+		if (show_err_msg)
+		{
+			err_msg = "Data cache load failed. See log for more details.";
+			depth_data.clear();
+			depth_velocity_data.clear();
+			depth_acceleration_data.clear();
+			pitch_data.clear();
+			roll_data.clear();
+			yaw_data.clear();
+		}
+		else if (x_data.size() == 0)
 		{
 			LOG_CRITICAL("Threading is broken!");
 			exit(1);
@@ -809,6 +856,8 @@ void SaveDataCache()
 	if (file == NULL)
 	{
 		LOG_ERROR("Failed to open file \"{0}\".", filepath);
+		show_err_msg = true;
+		err_msg = "Failed to open file";
 		return;
 	}
 
@@ -1167,6 +1216,15 @@ int main(int argc, char** argv)
 		bool need_save_layout = false;
 		bool use_default_layout = false;
 		running = create_menu_bar(running, &need_load_layout, &need_save_layout, &use_default_layout, &graph_x_max, &graph_x_min);
+
+		if (show_err_msg)
+		{
+			ImGui::Begin("Error", &show_err_msg);
+			ImGui::Text("%s", err_msg.c_str());
+			if (ImGui::Button("Ok"))
+				show_err_msg = false;
+			ImGui::End();
+		}
 
 		ImGui::Begin("Timeline");
 		{
