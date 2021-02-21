@@ -41,6 +41,10 @@ u32 HEIGHT = 720;
 
 const int SAMPLES_PER_SECOND = 25;
 
+const double half_pi = 1.5707963267948966;
+const double pi = 3.141592653589793;
+const double two_pi = 6.283185307179586;
+
 std::vector<float> depth_data;
 std::vector<float> depth_differences;
 std::vector<float> depth_velocity_data;
@@ -49,12 +53,18 @@ std::vector<float> depth_acceleration_data;
 std::vector<float> pitch_data;
 std::vector<float> roll_data;
 std::vector<float> yaw_data;
-std::vector<float> yaw_sin_data;
+std::vector<float> yaw_differences;
+std::vector<float> yaw_velocity_data;
 std::vector<float> x_data;
 u8 just_loaded_depth = 0;
 u8 just_loaded_pitch = 0;
 u8 just_loaded_roll = 0;
 u8 just_loaded_yaw = 0;
+
+bool yaw_data_use_velocity = false;
+bool just_changed_use_yaw_velocity = false;
+const char* yaw_data_absolute_string = "Heading data: Absolute";
+const char* yaw_data_velocity_string = "Heading data: Rate";
 
 struct PosColTexVertex
 {
@@ -205,7 +215,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 		depth_acceleration_data.clear();
 	}
 	if (type == DataType::YAW)
-		yaw_sin_data.clear();
+		yaw_velocity_data.clear();
 
 	// @TODO: X data compatability check
 	/*bool do_set_x_data = false;
@@ -241,7 +251,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 				depth_acceleration_data.clear();
 			}
 			if (type == DataType::YAW)
-				yaw_sin_data.clear();
+				yaw_velocity_data.clear();
 			if (do_set_x_data)
 				x_data.clear();
 			return 2;
@@ -251,9 +261,6 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 		// If we haven't filled the x_data buffer yet (just a sequence of numbers up to the length of the data), add the next number
 		if (do_set_x_data)
 			x_data.push_back(x_data.size());
-		// This was just testing what it would look like if I graphed the sin of the heading. It didn't work very well, but the code is still here.
-		if (type == DataType::YAW)
-			yaw_sin_data.push_back(glm::sin(sign_corrections[(unsigned)type] * std::stof(std::string(&mem[start], index - start))));
 
 		if (type == DataType::DEPTH)
 		{
@@ -262,14 +269,33 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 			else
 				depth_differences.push_back(data->at(data->size() - 1) - data->at(data->size() - 2));
 		}
+		else if (type == DataType::YAW)
+		{
+			if (data->size() == 1)
+				yaw_differences.push_back(0);
+			else
+			{
+				auto first = data->at(data->size() - 2);
+				auto second = data->at(data->size() - 1);
+				if (first < -half_pi && second > half_pi)
+				{
+					second -= two_pi;
+				}
+				else if (second < -half_pi && first > half_pi)
+				{
+					first -= two_pi;
+				}
+				yaw_differences.push_back(second - first);
+			}
+		}
 	}
 
+	static const int average_width = 150;
 	// Set flags for which graph to adjust the zoom level of, and log success, and calculate derivatives if applicable
 	switch (type)
 	{
 	case DataType::DEPTH:
 	{
-		static const int average_width = 250;
 
 		auto t = timer_create();
 
@@ -300,7 +326,11 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 			}
 			int i = 0;
 			for (; i < average_width / 2; i++)
+			{
 				depth_velocity_data.push_back(0);
+				depth_velocity_differences.push_back(0);
+			}
+
 			depth_velocity_data.push_back(sum / (float)average_width);
 			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
@@ -308,32 +338,17 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 				depth_velocity_data.push_back(SAMPLES_PER_SECOND * sum / (float)average_width);
 				depth_velocity_differences.push_back(depth_velocity_data[depth_velocity_data.size() - 1] - depth_velocity_data[depth_velocity_data.size() - 2]);
 			}
+			
 			for (; i < data->size(); i++)
+			{
 				depth_velocity_data.push_back(0);
+				depth_velocity_differences.push_back(0);
+			}
 		}
 
 		LOG_INFO("Time elapsed: {}", timer_elapsed(&t));
 
 		timer_reset(&t);
-
-		/*/
-		for (int i = 0; i < depth_velocity_data.size(); i++)
-		{
-			if (i > average_width / 2 + (average_width % 2) + 1 && i < depth_velocity_data.size() - average_width / 2 + (average_width % 2))
-			{
-				// Calculate velocity
-				float sum = 0;
-				for (int j = i - average_width / 2; j < i + average_width / 2 + (average_width % 2); j++)
-				{
-					sum += depth_velocity_data[j] - depth_velocity_data[j - 1];
-				}
-				depth_acceleration_data.push_back(sum / (float)average_width);
-			} else
-			{
-				depth_acceleration_data.push_back(0);
-			}
-		}
-		/*/
 
 		{
 			float sum = 0;
@@ -370,9 +385,29 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 		just_loaded_roll = 3;
 		break;
 	case DataType::YAW:
+	{
+		{
+			float sum = 0;
+			for (int i = 0; i < average_width; i++)
+			{
+				sum += yaw_differences[i];
+			}
+			int i = 0;
+			for (; i < average_width / 2; i++)
+				yaw_velocity_data.push_back(0);
+			yaw_velocity_data.push_back(sum / (float)average_width);
+			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
+			{
+				sum += yaw_differences[i + (average_width / 2) + (average_width % 2) - 1] - yaw_differences[i - (average_width / 2)];
+				yaw_velocity_data.push_back(SAMPLES_PER_SECOND * sum / (float)average_width);
+			}
+			for (; i < data->size(); i++)
+				yaw_velocity_data.push_back(0);
+		}
+
 		LOG_INFO("Loaded heading data from \"{0}\".", filepath);
 		just_loaded_yaw = 3;
-		break;
+	} break;
 
 	case DataType::COUNT:
 	default:
@@ -624,9 +659,6 @@ void LoadDataCache(double* x_max)
 			}
 			// Extract the number that we now know the start and length of, and turn it into a number
 			yaw_data.push_back(std::stof(std::string(&mem[start], index - start)));
-			
-			// This was just testing what it would look like if I graphed the sin of the heading. It didn't work very well, but the code is still here.
-			yaw_sin_data.push_back(glm::sin(std::stof(std::string(&mem[start], index - start))));
 
 			// If we haven't filled the x_data buffer yet (just a sequence of numbers up to the length of the data), add the next number
 			x_data.push_back(x_data.size());
@@ -1051,10 +1083,6 @@ void on_mouse_button_up_event(int button)
 		changing_orientation = false;
 }
 
-const double half_pi = 1.5707963267948966;
-const double pi = 3.141592653589793;
-const double two_pi = 6.283185307179586;
-
 void on_mouse_move_event(double x, double y)
 {
 	if (changing_orientation)
@@ -1164,6 +1192,7 @@ int main(int argc, char** argv)
 	bool dockspace_open = true;
 	bool do_overwrite_default_settings_dialog = false;
 	bool do_overwrite_default_settings = false;
+	bool reset_height_zooms = false;
 	float temporal_index = 0;
 	float flow_rate = 1.0f;
 	double graph_x_min = 0, graph_x_max = 0;
@@ -1241,14 +1270,14 @@ int main(int argc, char** argv)
 			if (playing)
 			{
 				sum_dt += dt;
-				while (sum_dt > (1.0f / 20.0f) / flow_rate)
+				while (sum_dt > (1.f / (float)SAMPLES_PER_SECOND) / flow_rate)
 				{
 					temporal_index++;
-					sum_dt -= (1.0f / 20.0f) / flow_rate;
+					sum_dt -= (1.f / (float)SAMPLES_PER_SECOND) / flow_rate;
 				}
 			}
 			ImGui::SameLine();
-			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 28);
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 			ImGui::SliderFloat("", &temporal_index, 0, x_data.size() - 1, "%.0f");
 
 			if (temporal_index < 0)
@@ -1256,24 +1285,9 @@ int main(int argc, char** argv)
 			else if (temporal_index >= x_data.size())
 				temporal_index = x_data.size() - 1;
 
-			ImGui::SameLine();
-
-			// Settings button
-			if (ImGui::ImageButton(IMGUI_TEXTURE_FROM_BGFX(settings_button_texture), ImVec2(13.0f, 13.0f)))
-			{
-				ImGui::OpenPopup("Player Settings");
-			}
-
-			// Show the popup window
-			ImGui::SetNextWindowPos(ImVec2(ImGui::GetMousePos().x, ImGui::GetMousePos().y - 64), ImGuiCond_Appearing);
-			if (ImGui::BeginPopup("Player Settings"))
-			{
-				ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f);
-				if (ImGui::Button("Reset"))
-					flow_rate = 1.0f;
-				ImGui::EndPopup();
-			}
-
+			ImGui::SetNextItemWidth(0.25 * ImGui::GetWindowWidth());
+			ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f, "Rate: %.3f");
+			ImGui::SameLine(ImGui::GetWindowWidth() - 244);
 			if (ImGui::Button("Set Mark 1"))
 			{
 				if (temporal_index > mark_1)
@@ -1306,9 +1320,16 @@ int main(int argc, char** argv)
 				mark_1 = x_data.size();
 			}
 
-			if (ImGui::Button("Heading data: Absolute"))
+			if (ImGui::Button("Reset playback rate"))
+				flow_rate = 1.0f;
+			ImGui::SameLine();
+			if (ImGui::Button("Reset graph height zooms"))
+				reset_height_zooms = true;
+			ImGui::SameLine(ImGui::GetWindowWidth() - (yaw_data_use_velocity ? 142 : 170));
+			if (ImGui::Button(yaw_data_use_velocity ? yaw_data_velocity_string : yaw_data_absolute_string))
 			{
-
+				yaw_data_use_velocity = !yaw_data_use_velocity;
+				just_changed_use_yaw_velocity = true;
 			}
 		}
 		ImGui::End();
@@ -1316,7 +1337,8 @@ int main(int argc, char** argv)
 		ImGui::Begin("Pitch Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, pitch_data.size() + 200, -3, 3, just_loaded_pitch ? ImGuiCond_Always : ImGuiCond_Once);
+			if (just_loaded_roll || reset_height_zooms)
+				ImPlot::SetNextPlotLimits(graph_x_min, graph_x_max, -3, 3, ImGuiCond_Always);
 			if (ImPlot::BeginPlot("Pitch Data", "Time", "Pitch"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1345,7 +1367,8 @@ int main(int argc, char** argv)
 		ImGui::Begin("Roll Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, roll_data.size() + 200, -3, 3, just_loaded_roll ? ImGuiCond_Always : ImGuiCond_Once);
+			if (just_loaded_roll || reset_height_zooms)
+				ImPlot::SetNextPlotLimits(graph_x_min, graph_x_max, -3, 3, ImGuiCond_Always);
 			if (ImPlot::BeginPlot("Roll Data", "Time", "Roll"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1371,10 +1394,14 @@ int main(int argc, char** argv)
 		}
 		ImGui::End();
 
-		ImGui::Begin("Yaw Graph");
+		ImGui::Begin("Heading Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, yaw_data.size() + 200, -3, 3, just_loaded_yaw ? ImGuiCond_Always : ImGuiCond_Once);
+			if (just_changed_use_yaw_velocity || reset_height_zooms || just_loaded_yaw)
+			{
+				just_changed_use_yaw_velocity = false;
+				ImPlot::SetNextPlotLimits(graph_x_min, graph_x_max, yaw_data_use_velocity ? -0.5 : -3.5, yaw_data_use_velocity ? 0.5 : 3.5, ImGuiCond_Always);
+			}
 			if (ImPlot::BeginPlot("Heading Data", "Time", "Yaw"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1389,10 +1416,10 @@ int main(int argc, char** argv)
 				{
 					size--;
 				}
-				ImPlot::PlotLine("Data", &x_data.data()[start], &yaw_data.data()[start], size, 0, sizeof(float) * downsample);
+				ImPlot::PlotLine("Data", &x_data.data()[start], yaw_data_use_velocity ? &yaw_velocity_data.data()[start] : &yaw_data.data()[start], size, 0, sizeof(float) * downsample);
 				// Show current location in time
 				if (yaw_data.size() != 0)
-					ImPlot::PlotScatter("Current", &temporal_index, &yaw_data[(int)temporal_index], 1);
+					ImPlot::PlotScatter("Current", &temporal_index, yaw_data_use_velocity ? &yaw_velocity_data[(int)temporal_index] : &yaw_data[(int)temporal_index], 1);
 				ImPlot::PlotLine("", &x1[0], &ys[0], 2);
 				ImPlot::PlotLine("", &x2[0], &ys[0], 2);
 				ImPlot::EndPlot();
@@ -1549,7 +1576,8 @@ int main(int argc, char** argv)
 		ImGui::Begin("Depth Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, depth_data.size() + 200, -1500, 200, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			if (just_loaded_depth || reset_height_zooms)
+				ImPlot::SetNextPlotLimits(graph_x_min, graph_x_max, -1500, 200, ImGuiCond_Always);
 			if (ImPlot::BeginPlot("Depth Data", "Time", "Depth"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1580,7 +1608,8 @@ int main(int argc, char** argv)
 		ImGui::Begin("Depth Velocity Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, depth_velocity_data.size() + 200, -5, 5, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			if (just_loaded_depth || reset_height_zooms)
+				ImPlot::SetNextPlotLimits(graph_x_min, graph_x_max, -5, 5, ImGuiCond_Always);
 			if (ImPlot::BeginPlot("Depth Velocity Data", "Time", "Velocity"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1609,7 +1638,8 @@ int main(int argc, char** argv)
 		ImGui::Begin("Depth Acceleration Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			ImPlot::SetNextPlotLimits(-200, depth_acceleration_data.size() + 200, -0.25, 0.25, just_loaded_depth ? ImGuiCond_Always : ImGuiCond_Once);
+			if (just_loaded_depth || reset_height_zooms)
+				ImPlot::SetNextPlotLimits(graph_x_min, graph_x_max, -0.25, 0.25, ImGuiCond_Always);
 			if (ImPlot::BeginPlot("Depth Acceleration Data", "Time", "Acceleration"))
 			{
 				ImPlot::SetLegendLocation(ImPlotLocation_East, 1, true);
@@ -1637,16 +1667,16 @@ int main(int argc, char** argv)
 
 		ImGui::Begin("Stats");
 		{
-			ImGui::Text("Depth: %f, Velocity: %f, Acceleration: %f", 
+			ImGui::Text("Depth: %+f, Velocity: %+f, Acceleration: %+f", 
 				depth_data.size() ? depth_data[temporal_index] : 0, 
 				depth_data.size() ? depth_velocity_data[temporal_index] : 0, 
 				depth_data.size() ? depth_acceleration_data[temporal_index] : 0);
 
-			ImGui::Text("Pitch: %f", pitch_data.size() ? pitch_data[temporal_index] : 0);
-			ImGui::Text("Roll: %f", roll_data.size() ? roll_data[temporal_index] : 0);
-			ImGui::Text("Heading: %f, Turn rate: %f", 
+			ImGui::Text("Pitch: %+f", pitch_data.size() ? pitch_data[temporal_index] : 0);
+			ImGui::Text("Roll: %+f", roll_data.size() ? roll_data[temporal_index] : 0);
+			ImGui::Text("Heading: %+f, Turn rate: %+f", 
 				yaw_data.size() ? yaw_data[temporal_index] : 0,
-				0.f);
+				yaw_velocity_data.size() ? yaw_velocity_data[temporal_index] : 0);
 		}
 		ImGui::End();
 
@@ -1739,6 +1769,8 @@ int main(int argc, char** argv)
 			just_loaded_roll--;
 		if (just_loaded_yaw)
 			just_loaded_yaw--;
+
+		reset_height_zooms = false;
 	}
 	LOG_INFO("Shutting down.");
 
