@@ -32,7 +32,7 @@ group ""
 
 project "Visualiser"
 	location "Visualiser"
-	kind "ConsoleApp"
+	kind "WindowedApp"
 	language "C++"
 	cppdialect "C++17"
     staticruntime "on"
