@@ -1184,9 +1184,9 @@ int main(int argc, char** argv)
 
 	// Various variables used in the run loop
 	u32 counter = 0;
-	float time, lastTime = 0;
-	float dt;
-	float sum_dt = 0.0f;
+	double time, lastTime = 0;
+	double dt;
+	double sum_dt = 0.0f;
 	bool running = true;
 	bool playing = false;
 	bool dockspace_open = true;
@@ -1208,7 +1208,7 @@ int main(int argc, char** argv)
 		// Clear the screen
 		bgfx::touch(0);
 		// Calculate the change in time since last frame
-		time = (float)glfwGetTime();
+		time = glfwGetTime();
 		dt = time - lastTime;
 		lastTime = time;
 		if (mainWindow.Update())
