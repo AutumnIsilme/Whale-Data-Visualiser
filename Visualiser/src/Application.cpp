@@ -512,10 +512,10 @@ void LoadDataCache(double* x_max)
 
 		x_data.clear();
 
-		just_loaded_depth = true;
-		just_loaded_pitch = true;
-		just_loaded_roll = true;
-		just_loaded_yaw = true;
+		just_loaded_depth = 3;
+		just_loaded_pitch = 3;
+		just_loaded_roll = 3;
+		just_loaded_yaw = 3;
 		single_cache = true;
 		mark_0 = 0;
 		mark_1 = 0;
@@ -660,6 +660,29 @@ void LoadDataCache(double* x_max)
 			// Extract the number that we now know the start and length of, and turn it into a number
 			yaw_data.push_back(std::stof(std::string(&mem[start], index - start)));
 
+			if (expect(&head, ',') || expect(&head, ' ')) {
+				LOG_ERROR("Malformed data input: Expected comma or space, got {0} at {1}.", mem[index], index);
+				show_err_msg = true;
+				err_msg = "Malformed data input: Expected newline";
+				depth_data.clear();
+				depth_differences.clear();
+				depth_velocity_data.clear();
+				depth_velocity_differences.clear();
+				depth_acceleration_data.clear();
+				return;
+			}
+			index += 2;
+
+			// At every iteration, we know we are at the start of a number
+			start = index;
+			// Loop to the end of the number
+			while (('0' <= mem[index] && mem[index] <= '9') || mem[index] == '.' || mem[index] == '-' || mem[index] == 'e') {
+				index++;
+				head++;
+			}
+			// Extract the number that we now know the start and length of, and turn it into a number
+			yaw_velocity_data.push_back(std::stof(std::string(&mem[start], index - start)));
+
 			// If we haven't filled the x_data buffer yet (just a sequence of numbers up to the length of the data), add the next number
 			x_data.push_back(x_data.size());
 
@@ -691,10 +714,10 @@ void LoadDataCache(double* x_max)
 	default_load:
 		x_data.clear();
 
-		just_loaded_depth = true;
-		just_loaded_pitch = true;
-		just_loaded_roll = true;
-		just_loaded_yaw = true;
+		just_loaded_depth = 3;
+		just_loaded_pitch = 3;
+		just_loaded_roll = 3;
+		just_loaded_yaw = 3;
 		single_cache = false;
 		mark_0 = 0;
 		mark_1 = 0;
@@ -859,7 +882,7 @@ void ExportDataSection(double x_min, double x_max)
 	u64 x2 = x_max;
 	for (u64 i = x1; i < x2; i++)
 	{
-		fprintf(file, "%f, %f, %f, %f, %f, %f\n", depth_data[i], depth_velocity_data[i], depth_acceleration_data[i], pitch_data[i], roll_data[i], yaw_data[i]);
+		fprintf(file, "%f, %f, %f, %f, %f, %f, %f\n", depth_data[i], depth_velocity_data[i], depth_acceleration_data[i], pitch_data[i], roll_data[i], yaw_data[i], yaw_velocity_data[i]);
 	}
 	fclose(file);
 	LOG_INFO("Exported data section to {}", filepath);
@@ -1012,6 +1035,20 @@ bool create_menu_bar(bool running, bool* need_load_layout, bool* need_save_layou
 					ExportDataSection(mark_0, mark_1);
 				}
 				ImGui::EndMenu();
+			}
+
+			if (ImGui::MenuItem("Clear view"))
+			{
+				x_data.clear();
+				depth_data.clear();
+				depth_velocity_data.clear();
+				depth_acceleration_data.clear();
+				pitch_data.clear();
+				roll_data.clear();
+				yaw_data.clear();
+				yaw_velocity_data.clear();
+				mark_0 = 0;
+				mark_1 = 0;
 			}
 
 			if (ImGui::MenuItem("Exit")) running = false;
@@ -1251,6 +1288,15 @@ int main(int argc, char** argv)
 		bool use_default_layout = false;
 		running = create_menu_bar(running, &need_load_layout, &need_save_layout, &use_default_layout, &graph_x_max, &graph_x_min);
 
+		if (x1[0] != mark_0) {
+			x1[0] = mark_0;
+			x1[1] = mark_0;
+		}
+		if (x2[0] != mark_1) {
+			x2[0] = mark_1;
+			x2[1] = mark_1;
+		}
+
 		if (show_err_msg)
 		{
 			ImGui::Begin("Error", &show_err_msg);
@@ -1287,7 +1333,7 @@ int main(int argc, char** argv)
 
 			ImGui::SetNextItemWidth(0.25 * ImGui::GetWindowWidth());
 			ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f, "Rate: %.3f");
-			ImGui::SameLine(ImGui::GetWindowWidth() - 244);
+			ImGui::SameLine(ImGui::GetWindowWidth() - 323);
 			if (ImGui::Button("Set Mark 1"))
 			{
 				if (temporal_index > mark_1)
@@ -1318,6 +1364,21 @@ int main(int argc, char** argv)
 			{
 				mark_0 = 0;
 				mark_1 = x_data.size();
+
+				x1[0] = mark_0;
+				x1[1] = mark_0;
+				x2[0] = mark_1;
+				x2[1] = mark_1;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Mark View")) {
+				mark_0 = graph_x_min;
+				mark_1 = graph_x_max;
+
+				x1[0] = mark_0;
+				x1[1] = mark_0;
+				x2[0] = mark_1;
+				x2[1] = mark_1;
 			}
 
 			if (ImGui::Button("Reset playback rate"))
@@ -1337,7 +1398,7 @@ int main(int argc, char** argv)
 		ImGui::Begin("Pitch Graph");
 		{
 			ImPlot::LinkNextPlotLimits(&graph_x_min, &graph_x_max, NULL, NULL);
-			if (just_loaded_roll || reset_height_zooms)
+			if (just_loaded_pitch || reset_height_zooms)
 				ImPlot::SetNextPlotLimits(graph_x_min, graph_x_max, -3, 3, ImGuiCond_Always);
 			if (ImPlot::BeginPlot("Pitch Data", "Time", "Pitch"))
 			{
