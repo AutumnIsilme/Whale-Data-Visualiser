@@ -548,6 +548,12 @@ void LoadDataCache(double* x_max)
 				state.depth_velocity_data.clear();
 				state.depth_velocity_differences.clear();
 				state.depth_acceleration_data.clear();
+
+				state.pitch_data.clear();
+				state.roll_data.clear();
+				state.yaw_data.clear();
+
+				state.x_data.clear();
 				return;
 			}
 			index += 2;
@@ -573,6 +579,12 @@ void LoadDataCache(double* x_max)
 				state.depth_velocity_data.clear();
 				state.depth_velocity_differences.clear();
 				state.depth_acceleration_data.clear();
+
+				state.pitch_data.clear();
+				state.roll_data.clear();
+				state.yaw_data.clear();
+
+				state.x_data.clear();
 				return;
 			}
 			index += 2;
@@ -598,6 +610,12 @@ void LoadDataCache(double* x_max)
 				state.depth_velocity_data.clear();
 				state.depth_velocity_differences.clear();
 				state.depth_acceleration_data.clear();
+
+				state.pitch_data.clear();
+				state.roll_data.clear();
+				state.yaw_data.clear();
+
+				state.x_data.clear();
 				return;
 			}
 			index += 2;
@@ -623,6 +641,12 @@ void LoadDataCache(double* x_max)
 				state.depth_velocity_data.clear();
 				state.depth_velocity_differences.clear();
 				state.depth_acceleration_data.clear();
+
+				state.pitch_data.clear();
+				state.roll_data.clear();
+				state.yaw_data.clear();
+
+				state.x_data.clear();
 				return;
 			}
 			index += 2;
@@ -648,6 +672,12 @@ void LoadDataCache(double* x_max)
 				state.depth_velocity_data.clear();
 				state.depth_velocity_differences.clear();
 				state.depth_acceleration_data.clear();
+
+				state.pitch_data.clear();
+				state.roll_data.clear();
+				state.yaw_data.clear();
+
+				state.x_data.clear();
 				return;
 			}
 			index += 2;
@@ -672,6 +702,12 @@ void LoadDataCache(double* x_max)
 				state.depth_velocity_data.clear();
 				state.depth_velocity_differences.clear();
 				state.depth_acceleration_data.clear();
+
+				state.pitch_data.clear();
+				state.roll_data.clear();
+				state.yaw_data.clear();
+
+				state.x_data.clear();
 				return;
 			}
 			index += 2;
@@ -699,6 +735,12 @@ void LoadDataCache(double* x_max)
 				state.depth_velocity_data.clear();
 				state.depth_velocity_differences.clear();
 				state.depth_acceleration_data.clear();
+
+				state.pitch_data.clear();
+				state.roll_data.clear();
+				state.yaw_data.clear();
+
+				state.x_data.clear();
 				return;
 			}
 		}
@@ -1332,7 +1374,7 @@ int main(int argc, char** argv)
 			if (temporal_index < 0)
 				temporal_index = 0;
 			else if (temporal_index >= state.x_data.size())
-				temporal_index = state.x_data.size() - 1;
+				temporal_index = state.x_data.size() == 0 ? 0 : state.x_data.size() - 1;
 
 			ImGui::SetNextItemWidth(0.25 * ImGui::GetWindowWidth());
 			ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f, "Rate: %.3f");
