@@ -1,0 +1,18 @@
+v0.1.0 beta 3 (unfinished):
+ - Refactor some code to make it better
+ - Fixed crash on data load where some data lists would not be cleared properly
+
+v0.1.0 beta 2:
+ - Moved buttons from settings to below slider
+ - Made the application automatically maximise on startup
+ - Set playback rate at 1.0x to 25Hz
+ - Added numerical stats box
+ - Added error message boxes
+ - Added ability to export a section of data
+ - Added ability to load an exported section
+ - Added velocity/acceleration calculations for depth
+ - Added velocity calculations for heading
+ - Fixed 3D viewport rotation click detection when popped out
+ - Fixed crash when the visualiser is left open for long periods
+ - Disabled console window showing when launched
+ - Updated libraries to newer versions
