@@ -34,11 +34,6 @@
 _getShader(vs_texture);
 _getShader(fs_texture);
 
-Window mainWindow;
-
-u32 WIDTH = 1280;
-u32 HEIGHT = 720;
-
 const int SAMPLES_PER_SECOND = 25;
 
 const double half_pi = 1.5707963267948966;
@@ -49,6 +44,11 @@ const char* yaw_data_absolute_string = "Heading data: Absolute";
 const char* yaw_data_velocity_string = "Heading data: Rate";
 
 struct {
+	Window main_window;
+
+	u32 WIDTH = 1280;
+	u32 HEIGHT = 720;
+
 	std::vector<float> depth_data;
 	std::vector<float> depth_differences;
 	std::vector<float> depth_velocity_data;
@@ -162,15 +162,15 @@ static const uint16_t s_cubeTriList[] =
 /* Called when the window size changes and at startup to ensure clear colour is set and window size is known */
 void reset(s32 width, s32 height)
 {
-	WIDTH = width;
-	HEIGHT = height;
+	state.WIDTH = width;
+	state.HEIGHT = height;
 
 	bgfx::reset(width, height, BGFX_RESET_VSYNC);
 	imguiReset(width, height);
 
 	bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
 	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000FF, 1.0f, 0);
-	bgfx::setViewRect(0, 0, 0, WIDTH, HEIGHT);
+	bgfx::setViewRect(0, 0, 0, state.WIDTH, state.HEIGHT);
 }
 
 enum class DataType
@@ -265,6 +265,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 		if (do_set_x_data)
 			state.x_data.push_back(state.x_data.size());
 
+		/* Append the difference between the current and the previous to the differences list */
 		if (type == DataType::DEPTH)
 		{
 			if (data->size() == 1)
@@ -278,6 +279,8 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 				state.yaw_differences.push_back(0);
 			else
 			{
+				/* If the heading has wrapped around between the previous and current, adjust so the 
+				   actual delta is calculated. */
 				auto first = data->at(data->size() - 2);
 				auto second = data->at(data->size() - 1);
 				if (first < -half_pi && second > half_pi)
@@ -302,27 +305,9 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 
 		auto t = timer_create();
 
-		/*/
-		for (int i = 0; i < data.size(); i++)
-		{
-			if (i > average_width / 2 + (average_width % 2) + 1 && i < data.size() - average_width / 2 + (average_width % 2))
-			{
-				// Calculate velocity
-				float sum = 0;
-				for (int j = i - average_width / 2; j < i + average_width / 2 + (average_width % 2); j++)
-				{
-					sum += state.depth_differences[j];
-				}
-				state.depth_velocity_data.push_back(sum / (float) average_width);
-			} else
-			{
-				state.depth_velocity_data.push_back(0);
-			}
-		}
-		/*/
-
 		{
 			float sum = 0;
+			// Add all the numbers for the first valid location for an average.
 			for (int i = 0; i < average_width; i++)
 			{
 				sum += state.depth_differences[i];
@@ -330,6 +315,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 			int i = 0;
 			for (; i < average_width / 2; i++)
 			{
+				// Push zeroes until the first location that can be at the middle of the range is reached.
 				state.depth_velocity_data.push_back(0);
 				state.depth_velocity_differences.push_back(0);
 			}
@@ -337,6 +323,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 			state.depth_velocity_data.push_back(sum / (float)average_width);
 			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
+				// Subtract the earliest in the old range and add the next to get the new sum, then calculate the average
 				sum += state.depth_differences[i + (average_width / 2) + (average_width % 2) - 1] - state.depth_differences[i - (average_width / 2)];
 				state.depth_velocity_data.push_back(SAMPLES_PER_SECOND * sum / (float)average_width);
 				state.depth_velocity_differences.push_back(state.depth_velocity_data[state.depth_velocity_data.size() - 1] - state.depth_velocity_data[state.depth_velocity_data.size() - 2]);
@@ -344,6 +331,7 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 			
 			for (; i < data->size(); i++)
 			{
+				// Push zeroes to fill the data
 				state.depth_velocity_data.push_back(0);
 				state.depth_velocity_differences.push_back(0);
 			}
@@ -355,19 +343,23 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 
 		{
 			float sum = 0;
+			// Add all the numbers for the first valid location for an average.
 			for (int i = 0; i < average_width; i++)
 			{
 				sum += state.depth_velocity_differences[i];
 			}
 			int i = 0;
+			// Push zeroes until the first location that can be at the middle of the range is reached.
 			for (; i < average_width / 2; i++)
 				state.depth_acceleration_data.push_back(0);
 			state.depth_acceleration_data.push_back(sum / (float)average_width);
 			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
+				// Subtract the earliest in the old range and add the next to get the new sum, then calculate the average
 				sum += state.depth_velocity_differences[i + (average_width / 2) + (average_width % 2) - 1] - state.depth_velocity_differences[i - (average_width / 2)];
 				state.depth_acceleration_data.push_back(SAMPLES_PER_SECOND * sum / (float)average_width);
 			}
+			// Push zeroes to fill the data
 			for (; i < data->size(); i++)
 				state.depth_acceleration_data.push_back(0);
 		}
@@ -391,19 +383,23 @@ int ActuallyLoadData(std::vector<float>* data, DataType type, const char* filepa
 	{
 		{
 			float sum = 0;
+			// Add all the numbers for the first valid location for an average.
 			for (int i = 0; i < average_width; i++)
 			{
 				sum += state.yaw_differences[i];
 			}
 			int i = 0;
+			// Push zeroes until the first location that can be at the middle of the range is reached.
 			for (; i < average_width / 2; i++)
 				state.yaw_velocity_data.push_back(0);
 			state.yaw_velocity_data.push_back(sum / (float)average_width);
 			for (; i < data->size() - average_width / 2 + (average_width % 2) - 1; i++)
 			{
+				// Subtract the earliest in the old range and add the next to get the new sum, then calculate the average
 				sum += state.yaw_differences[i + (average_width / 2) + (average_width % 2) - 1] - state.yaw_differences[i - (average_width / 2)];
 				state.yaw_velocity_data.push_back(SAMPLES_PER_SECOND * sum / (float)average_width);
 			}
+			// Push zeroes to fill the data
 			for (; i < data->size(); i++)
 				state.yaw_velocity_data.push_back(0);
 		}
@@ -487,6 +483,7 @@ void LoadDataCache(double* x_max)
 	{
 	case 1:
 	{
+		// Check for @section at the top
 		if (expect(&head, 's') || expect(&head, 'e') || expect(&head, 'c') || expect(&head, 't') || expect(&head, 'i') || expect(&head, 'o') || expect(&head, 'n'))
 		{
 			while (*head != '\n' && head - mem < 15) head++;
@@ -747,6 +744,7 @@ void LoadDataCache(double* x_max)
 	} break;
 	case 0:
 	{
+		// Check for @cache at the top of the file
 		if (expect(&head, 'a') || expect(&head, 'c') || expect(&head, 'h') || expect(&head, 'e'))
 		{
 			while (*head != '\n' && head - mem < 15) head++;
@@ -807,6 +805,7 @@ void LoadDataCache(double* x_max)
 				{
 					done[0] = true;
 					fnames[0] = std::string(fname);
+					// Dispatch a thread to load the data
 					threads[0] = std::thread(load, &state.depth_data, DataType::DEPTH, fnames[0], x_max, true, &results[0]);
 				} else
 				{
@@ -864,6 +863,7 @@ void LoadDataCache(double* x_max)
 				head++;
 			}
 		}
+		// Rejoin each thread
 		for (int i = 0; i < 4; i++)
 		{
 			if (threads[i].joinable())
@@ -897,6 +897,7 @@ void LoadDataCache(double* x_max)
 
 void ExportDataSection(double x_min, double x_max)
 {
+	// Ensure that all data necessary is actually loaded
 	if (state.depth_data.size() < x_max || state.pitch_data.size() < x_max || state.yaw_data.size() < x_max || state.roll_data.size() < x_max || x_min < 0 || x_min >= x_max)
 	{
 		LOG_ERROR("Bounds check failed on export attempt");
@@ -925,6 +926,7 @@ void ExportDataSection(double x_min, double x_max)
 
 	u64 x1 = x_min;
 	u64 x2 = x_max;
+	// Print data for each point in the range to the file
 	for (u64 i = x1; i < x2; i++)
 	{
 		fprintf(file, "%f, %f, %f, %f, %f, %f, %f\n", state.depth_data[i], state.depth_velocity_data[i], state.depth_acceleration_data[i], state.pitch_data[i], state.roll_data[i], state.yaw_data[i], state.yaw_velocity_data[i]);
@@ -937,6 +939,8 @@ void ExportDataSection(double x_min, double x_max)
 /* Save a data cache to disk (Actually just a list of filenames to be loaded at one time later) */
 void SaveDataCache()
 {
+	// If the data was loaded from a data section, we only have a single file.
+	// Therefore, save as a data section instead of as a filename cache
 	if (state.single_cache)
 	{
 		ExportDataSection(0, state.x_data.size());
@@ -1150,6 +1154,7 @@ void on_mouse_button_down_event(int button)
 	{
 		return;
 	}
+	// If we clicked in the frame, 
 	if (frame_x <= cursor_x && frame_x + frame_width >= cursor_x &&
 		frame_y <= cursor_y && frame_y + frame_height >= cursor_y &&
 		io.MouseHoveredViewport == viewport_viewport)
@@ -1194,7 +1199,7 @@ int main(int argc, char** argv)
 {
 	Log::Init();
 
-	if (mainWindow.Init(&WIDTH, &HEIGHT, true) == -1)
+	if (state.main_window.Init(&state.WIDTH, &state.HEIGHT, true) == -1)
 	{
 		LOG_CRITICAL("Window init failed, terminating.");
 		return -1;
@@ -1203,13 +1208,13 @@ int main(int argc, char** argv)
 
 	// Tell the graphics library about the window and initialisation parameters
 	bgfx::PlatformData platform_data;
-	platform_data.nwh = mainWindow.GetPlatformWindow();
+	platform_data.nwh = state.main_window.GetPlatformWindow();
 	bgfx::setPlatformData(platform_data);
 
 	bgfx::Init init_params;
 	init_params.type = bgfx::RendererType::Count;
-	init_params.resolution.width = WIDTH;
-	init_params.resolution.height = HEIGHT;
+	init_params.resolution.width = state.WIDTH;
+	init_params.resolution.height = state.HEIGHT;
 	init_params.resolution.reset = BGFX_RESET_VSYNC;
 	bgfx::init(init_params);
 
@@ -1249,8 +1254,8 @@ int main(int argc, char** argv)
 
 	imguiSetUserMousePosCallback((void(*)(void*, double, double))cursor_pos_callback);
 
-	imguiInit(&mainWindow);
-	imguiReset(WIDTH, HEIGHT);
+	imguiInit(&state.main_window);
+	imguiReset(state.WIDTH, state.HEIGHT);
 
 	imguiInstallCallbacks();
 
@@ -1260,7 +1265,7 @@ int main(int argc, char** argv)
 	glm::vec2 model_viewport_size_cache = glm::vec2(0.0f, 0.0f);
 
 	// Initialise clear colour and width/height
-	reset(WIDTH, HEIGHT);
+	reset(state.WIDTH, state.HEIGHT);
 
 	LoadTextures();
 
@@ -1293,12 +1298,12 @@ int main(int argc, char** argv)
 		time = glfwGetTime();
 		dt = time - lastTime;
 		lastTime = time;
-		if (mainWindow.Update())
+		if (state.main_window.Update())
 		{
 			running = false;
 			break;
 		}
-		if (WIDTH == 0 || HEIGHT == 0)
+		if (state.WIDTH == 0 || state.HEIGHT == 0)
 			continue;
 		// Tell the GUI library to process events and start a new frame
 		imguiEvents(dt);
@@ -1371,6 +1376,7 @@ int main(int argc, char** argv)
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 			ImGui::SliderFloat("", &temporal_index, 0, state.x_data.size() - 1, "%.0f");
 
+			// If the temporal_index is out of range, make sure it is in range.
 			if (temporal_index < 0)
 				temporal_index = 0;
 			else if (temporal_index >= state.x_data.size())
@@ -1379,6 +1385,7 @@ int main(int argc, char** argv)
 			ImGui::SetNextItemWidth(0.25 * ImGui::GetWindowWidth());
 			ImGui::SliderFloat("Rate", &flow_rate, 0.25f, 10.0f, "Rate: %.3f");
 			ImGui::SameLine(ImGui::GetWindowWidth() - 323);
+			// Buttons to manage marks
 			if (ImGui::Button("Set Mark 1"))
 			{
 				if (temporal_index > state.mark_1)
@@ -1771,6 +1778,7 @@ int main(int argc, char** argv)
 		}
 		ImGui::End();
 
+		// Show panel with the current values
 		ImGui::Begin("Stats");
 		{
 			ImGui::Text("Depth: %+f, Velocity: %+f, Acceleration: %+f", 
